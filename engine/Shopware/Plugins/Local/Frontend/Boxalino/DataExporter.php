@@ -46,6 +46,15 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
 
     protected $_attributes = array();
     protected $config = array();
+    protected $locales = array();
+    protected $languages = array();
+
+    protected $translationFields = array(
+        'txtArtikel'          => 'name',
+        'txtshortdescription' => 'description',
+        'txtlangbeschreibung' => 'description_long',
+        'txtzusatztxt'        => 'additionaltext',
+    );
 
     /**
      * constructor
@@ -82,7 +91,7 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
                     $resultPushZip = $this->pushZip($id);
                 }
 
-                $data[$account] = array(
+                $data[$this->getConfigurationByShopId($id, 'account')] = array(
                     'xml' => $resultPushXml,
                     'zip' => $resultPushZip,
                     'success' => $status
@@ -119,12 +128,12 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
 
         // Create files
         $this->startXml();
-        $zip->addFile($this->getArticles(), self::ITEM_PROPERTIES_CSV);
-        $zip->addFile($this->getBrands(), self::ITEM_BRANDS_CSV);
-        $zip->addFile($this->getCategories(), self::CATEGORIES_CSV);
-        $zip->addFile($this->getItemCategories(), self::ITEM_CATEGORIES_CSV);
-        $zip->addFile($this->getCustomers(), self::CUSTOMERS_CSV);
-        $zip->addFile($this->getTransactions(), self::TRANSACTIONS_CSV);
+        $zip->addFile($this->getArticles($id), self::ITEM_PROPERTIES_CSV);
+        $zip->addFile($this->getBrands($id), self::ITEM_BRANDS_CSV);
+        $zip->addFile($this->getCategories($id), self::CATEGORIES_CSV);
+        $zip->addFile($this->getItemCategories($id), self::ITEM_CATEGORIES_CSV);
+        $zip->addFile($this->getCustomers($id), self::CUSTOMERS_CSV);
+        $zip->addFile($this->getTransactions($id), self::TRANSACTIONS_CSV);
         $zip->addFromString('properties.xml', $this->finishAndGetXml());
         $zip->close();
 
@@ -205,35 +214,10 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
     }
 
     /**
-     * get a shop specific configuration setting
-     *
      * @param int $id
-     * @param string $key
-     * @return bool|string
-     */
-    protected function getConfigurationByShopId($id, $key) {
-        if (!array_key_exists($id, $this->config)) {
-            $config = array(
-                'shop' => Shopware()->Models()->find('Shopware\\Models\\Shop\\Shop', $id),
-                'db'   => $this->db,
-            );
-            $scopeConfig = new \Shopware_Components_Config($config);
-
-            $this->config[$id] = array(
-                'enabled'  => (bool) $scopeConfig->get('boxalino_export', false),
-                'account'  => $scopeConfig->get('boxalino_account'),
-                'username' => $scopeConfig->get('boxalino_form_username'),
-                'password' => $scopeConfig->get('boxalino_form_password'),
-                'dev'      => (bool) $scopeConfig->get('boxalino_dev', true),
-            );
-        }
-        return $this->config[$id][$key];
-    }
-
-    /**
      * @return string
      */
-    protected function getArticles()
+    protected function getArticles($id)
     {
         // property descriptions for XML configuration
         $this->propertyDescriptions[self::ITEM_PROPERTIES] = array(
@@ -254,7 +238,6 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
                 'instock' => array('type' => 'number'),
                 'stockmin' => array('type' => 'number'),
                 'description' => array('type' => 'body'),
-                'description_long' => array('type' => 'body'),
                 'shippingtime',
                 'added' => array('type' => 'date', 'params' => array(
                     'fieldParameter' => array('name' => 'multiValued', 'value' => 'false')
@@ -321,16 +304,6 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
         $attributeFields = array_flip($attributeFields);
 
         $db = $this->db;
-
-        // get all languages of this shop
-        $sql = $db->select()
-                  ->from('s_core_shops', array('id'))
-                  ->where($this->qi('default') . ' = ?', 0);
-        $languages = $db->fetchCol($sql);
-
-        // get the default locale
-        $locale = $this->getDefaultLocale();
-        $locale = $locale['locale'];
 
         // get the default customer group (no support for multiple customergroups yet)
         $sql = $db->select()
@@ -418,29 +391,16 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
             $fields[$key] = $key;
         }
 
-        // default locale fields
+        // locale fields
         $localeFields = array(
             'name',
             'description',
             'description_long',
         );
+        $locales = $this->getShopLocales($id);
         foreach ($localeFields as $key) {
-            $fields[$key . '_' . $locale] = $key;
-        }
-
-        // other language specific fields
-        $translationFields = array(
-            'txtArtikel'          => 'name',
-            'txtzusatztxt'        => 'additionaltext',
-            'txtshortdescription' => 'description',
-            'txtlangbeschreibung' => 'description_long'
-        );
-        $shopLanguages = $this->getLocales();
-        foreach ($languages as $language) {
-            foreach ($translationFields as $field) {
-                $fields[
-                    $field . '_' . $shopLanguages[$language]['locale']
-                ] = new Zend_Db_Expr($empty);
+            foreach ($locales as $locale) {
+                $fields[$key . '_' . $locale] = $key;
             }
         }
 
@@ -548,11 +508,13 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
         // details
         $fields = array(
             'item_id' => 'id',
-            'additionaltext_' . $locale => 'additionaltext',
             'releasedate' => new Zend_Db_Expr(
                 "IF($dReleasedate = $zeroDate, $empty, $dReleasedate)"
             ),
         );
+        foreach ($locales as $locale) {
+            $fields['additionaltext_' . $locale] = 'additionaltext';
+        }
         $simpleFields = array(
             'ordernumber',
             'instock',
@@ -706,22 +668,29 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
         }
 
         // translations as serialized PHP objects
-        foreach ($languages as $language) {
-            $quotedTableKey = $this->qi('ta_' . $language);
-            $quotedLanguage = $db->quote($language);
+        $shopLanguages = $this->getLocales();
+        foreach ($locales as $locale) {
+            foreach ($shopLanguages as $l) {
+                if ($l['locale'] == $locale) {
+                    $localeId = $l['locale_id'];
+                    break;
+                }
+            }
+            $quotedTableKey = $this->qi('ta_' . $localeId);
+            $quotedLanguage = $db->quote($localeId);
             $sql->joinLeft(
-                    array('ta_' . $language => 's_core_translations'),
+                    array('ta_' . $localeId => 's_core_translations'),
                     "$quotedTableKey.$fieldObjectKey = $aId AND
                     $quotedTableKey.$fieldObjectType = $article AND
                     $quotedTableKey.$fieldObjectLanguage = $quotedLanguage",
-                    array('article_translation_' . $shopLanguages[$language]['locale'] => 'objectdata')
+                    array('article_translation_' . $locale => 'objectdata')
             );
             $sql->joinLeft(
-                    array('td_' . $language => 's_core_translations'),
+                    array('td_' . $localeId => 's_core_translations'),
                     "$quotedTableKey.$fieldObjectKey = $dId AND
                     $quotedTableKey.$fieldObjectType = $variant AND
                     $quotedTableKey.$fieldObjectLanguage = $quotedLanguage",
-                    array('detail_translation_' . $shopLanguages[$language]['locale'] => 'objectdata')
+                    array('detail_translation_' . $locale => 'objectdata')
             );
         }
 
@@ -735,7 +704,7 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
 
         $first = true;
         while ($row = $stmt->fetch()) {
-            $row = $this->prepareArticleRow($row, $languages, $translationFields);
+            $row = $this->prepareArticleRow($row, $locales);
 
             if ($first) {
                 $first = false;
@@ -749,9 +718,10 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
     }
 
     /**
+     * @param int $id
      * @return string
      */
-    protected function getBrands()
+    protected function getBrands($id)
     {
         // prepare XML configuration
         $this->propertyDescriptions[self::ITEM_BRANDS] = array(
@@ -801,9 +771,9 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
         $this->openFile($file_name);
 
         $headers = array('item_id');
-        $locales = $this->getLocales();
-        foreach($locales as $l) {
-            $headers[] = 'brand_' . $l['locale'];
+        $locales = $this->getShopLocales($id);
+        foreach($locales as $locale) {
+            $headers[] = 'brand_' . $locale;
         }
         $this->addRowToFile($headers);
 
@@ -820,9 +790,10 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
     }
 
     /**
+     * @param int $id
      * @return string
      */
-    protected function getCategories()
+    protected function getCategories($id)
     {
         // prepare XML configuration
         $this->propertyDescriptions[self::CATEGORIES] = array(
@@ -838,22 +809,16 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
         $source->addChild('referenceIdColumn')->addAttribute('value', 'cat_id');
         $source->addChild('parentIdColumn')->addAttribute('value', 'parent_id');
         $labelColumns = $source->addChild('labelColumns');
-        foreach($this->getLocales() as $l) {
+        $locales = $this->getShopLocales($id);
+        foreach($locales as $locale) {
             $label = $labelColumns->addChild('language');
-            $label->addAttribute('name', $l['locale']);
-            $label->addAttribute('value', 'value_'.$l['locale']);
+            $label->addAttribute('name', $locale);
+            $label->addAttribute('value', 'value_' . $locale);
         }
         $this->appendXmlOptions($source);
 
         // prepare queries
         $db = $this->db;
-        $sql = $db->select()
-                  ->from('s_core_shops', array('locale_id', 'category_id'));
-        $categoryLanguages = array();
-        foreach ($db->fetchAll($sql) as $a) {
-            $categoryLanguages[$a['locale_id']] = $a['category_id'];
-        }
-
         $sql = $db->select()
                   ->from('s_categories', array('id', 'parent', 'description', 'path'))
                   ->where($this->qi('path') . ' IS NOT NULL')
@@ -865,18 +830,17 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
         $this->openFile($file_name);
 
         $headers = array('cat_id', 'parent_id');
-        $locales = $this->getLocales();
-        foreach($locales as $l) {
-            $headers[] = 'value_' . $l['locale'];
+        foreach($locales as $locale) {
+            $headers[] = 'value_' . $locale;
         }
         $this->addRowToFile($headers);
 
         while ($row = $stmt->fetch()) {
             $category = array($row['id'], $row['parent']);
-            foreach($locales as $l) {
-                if (strpos($row['path'], '|' . $categoryLanguages[$l['locale_id']] . '|') !== false) {
+            foreach($this->getShopCategoryIds($id) as $categoryId) {
+                if (strpos($row['path'], '|' . $categoryId . '|') !== false) {
                     $category[] = $row['description'];
-                } else if($row['id'] == $categoryLanguages[$l['locale_id']]) {
+                } else if($row['id'] == $categoryId) {
                     $category[] = $row['description'];
                 } else {
                     $category[] = '';
@@ -889,7 +853,11 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
         return $file_name;
     }
 
-    protected function getItemCategories()
+    /**
+     * @param int $id
+     * @return string
+     */
+    protected function getItemCategories($id)
     {
         // prepare XML configuration
         $this->propertyDescriptions[self::ITEM_CATEGORIES] = array(
@@ -959,11 +927,12 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
     }
 
     /**
+     * @param int $id
      * @return string
      */
-    protected function getCustomers() {
+    protected function getCustomers($id) {
         $headers = array('id', 'customer_id', 'public_id', 'country', 'zip', 'dob', 'gender');
-        $should_export_email = (bool) Shopware()->Config()->get('boxalino_customer_email');
+        $should_export_email = $this->getConfigurationByShopId($id, 'email');
         if ($should_export_email) {
             $headers[] = 'email';
         }
@@ -1035,7 +1004,8 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
                     array('l' => 's_core_locales'),
                     $this->qi('l.id') . ' = ' . $this->qi('u.language'),
                     array('language' => 'locale')
-                  );
+                  )
+                  ->where($this->qi('u.subshopID') . ' = ?', $id);
 
         if ($should_export_email) {
             $sql->columns('email', 'u');
@@ -1059,9 +1029,10 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
     }
 
     /**
+     * @param int $id
      * @return string
      */
-    protected function getTransactions() {
+    protected function getTransactions($id) {
         // prepare XML configuration
         $containers = $this->xml->xpath('//containers');
         $containers = $containers[0];
@@ -1129,10 +1100,11 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
                         'shipping_date' => 'releasedate',
                         'quantity' => 'quantity',
                     )
-                  );
+                  )
+                  ->where($this->qi('o.subshopID') . ' = ?', $id);
 
         // transactions are always incremental, except by configuration overide
-        if ((bool) Shopware()->Config()->get('boxalino_transaction_style')) {
+        if ($this->getConfigurationByShopId($id, 'increment')) {
             $sql->where($this->qi('o.ordertime') . ' >= ?', $this->getLastDelta());
         }
 
@@ -1187,11 +1159,10 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
 
     /**
      * @param array $row
-     * @param array $languages
-     * @param array $translationFields
+     * @param array $locales
      * @return array
      */
-    protected function prepareArticleRow($row, $languages, $translationFields)
+    protected function prepareArticleRow($row, $locales)
     {
         if (empty($row['configuratorsetID'])) {
             $row['mainnumber'] = '';
@@ -1208,33 +1179,36 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
                     $categorypaths[] = $categorypath;
                 }
             }
-            $row['categorypaths'] = implode("\r\n",$categorypaths);
+            $row['categorypaths'] = implode("\r\n", $categorypaths);
         }
 
-        $shopLanguages = $this->getLocales();
-
-        if (!empty($languages)) {
-            foreach ($languages as $language) {
-                if (!empty($row['article_translation_' . $shopLanguages[$language]['locale']])) {
-                    $objectdata = unserialize($row['article_translation_' . $shopLanguages[$language]['locale']]);
-                } elseif (!empty($row['detail_translation_' . $shopLanguages[$language]['locale']])) {
-                    $objectdata = unserialize($row['detail_translation_' . $shopLanguages[$language]['locale']]);
+        if (!empty($locales)) {
+            foreach ($locales as $locale) {
+                if (!empty($row['article_translation_' . $locale])) {
+                    $objectdata = unserialize($row['article_translation_' . $locale]);
+                } elseif (!empty($row['detail_translation_' . $locale])) {
+                    $objectdata = unserialize($row['detail_translation_' . $locale]);
                 } else {
                     continue;
                 }
 
                 if (!empty($objectdata)) {
-                    foreach ($objectdata as $key=>$value) {
-                        if (isset($translationFields[$key])) {
-                            $row[$translationFields[$key] . '_' . $shopLanguages[$language]['locale']] = $value;
+                    foreach ($objectdata as $key => $value) {
+                        if (array_key_exists($key, $this->translationFields) && strlen($value)) {
+                            $row[$this->translationFields[$key] . '_' . $locale] = $value;
                         }
                     }
                 }
             }
 
-            foreach ($languages as $language) {
-                unset($row['article_translation_'.$language]);
-                unset($row['detail_translation_'.$language]);
+            foreach ($locales as $locale) {
+                $row['description_' . $locale] = trim(
+                    $row['description_' . $locale] . PHP_EOL .
+                    $row['description_long_' . $locale]
+                );
+                unset($row['description_long_' . $locale]);
+                unset($row['article_translation_' . $locale]);
+                unset($row['detail_translation_' . $locale]);
             }
         }
 
@@ -1298,37 +1272,113 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
     }
 
     /**
-     * @return string[]
+     * get the all active main (sub)shop ids
+     *
+     * @return array
      */
-    protected function getLocales() {
+    protected function getMainShopIds() {
         $db = $this->db;
         $sql = $db->select()
-                  ->from(
-                    array('s' => 's_core_shops'),
-                    array('shop_id' => 'id')
-                  )
-                  ->join(
-                    array('l' => 's_core_locales'),
-                    'l.id = s.locale_id',
-                    array('locale' => 'locale', 'locale_id' => 'id')
-                  )
-                  ->order('s.default DESC');
-        $result = array();
-        foreach ($db->fetchAll($sql) as $l) {
-            $position = strpos($l['locale'], '_');
-            if ($position !== false)
-                $l['locale'] = substr($l['locale'], 0, $position);
-            $result[$l['shop_id']] = $l;
-        }
-        return $result;
+                  ->from('s_core_shops', array('id'))
+                  ->where($this->qi('main_id') . ' IS NULL')
+                  ->where($this->qi('active') . ' = ?', 1);
+        return $db->fetchCol($sql);
     }
 
     /**
-     * @return string[]
+     * get a shop specific configuration setting
+     *
+     * @param int $id
+     * @param string $key
+     * @return bool|string
      */
-    protected function getDefaultLocale() {
-        $result = $this->getLocales();
-        return current($result);
+    protected function getConfigurationByShopId($id, $key) {
+        if (!array_key_exists($id, $this->config)) {
+            $config = array(
+                'shop' => Shopware()->Models()->find('Shopware\\Models\\Shop\\Shop', $id),
+                'db'   => $this->db,
+            );
+            $scopeConfig = new \Shopware_Components_Config($config);
+
+            $this->config[$id] = array(
+                'enabled'  => (bool) $scopeConfig->get('boxalino_export', false),
+                'account'  => $scopeConfig->get('boxalino_account'),
+                'username' => $scopeConfig->get('boxalino_form_username'),
+                'password' => $scopeConfig->get('boxalino_form_password'),
+                'dev'      => (bool) $scopeConfig->get('boxalino_dev', true),
+                'email'    => (bool) $scopeConfig->get('boxalino_customer_email', false),
+                'increment'=> (bool) $scopeConfig->get('boxalino_transaction_style', true),
+            );
+        }
+        return $this->config[$id][$key];
+    }
+
+    /**
+     * get locale information for every shop
+     *
+     * @return array
+     */
+    protected function getLocales() {
+        if (count($this->locales) == 0) {
+            $db = $this->db;
+            $sql = $db->select()
+                      ->from(
+                        array('s' => 's_core_shops'),
+                        array('shop_id' => 'id')
+                      )
+                      ->join(
+                        array('l' => 's_core_locales'),
+                        'l.id = s.locale_id',
+                        array('locale' => 'locale', 'locale_id' => 'id')
+                      )
+                      ->order('s.default DESC');
+            foreach ($db->fetchAll($sql) as $l) {
+                $position = strpos($l['locale'], '_');
+                if ($position !== false) {
+                    $l['locale'] = substr($l['locale'], 0, $position);
+                }
+                $this->locales[$l['shop_id']] = $l;
+            }
+        }
+        return $this->locales;
+    }
+
+    /**
+     * get all locales for this (sub)shop
+     *
+     * @param int $id
+     * @return array
+     */
+    protected function getShopLocales($id) {
+        if (!array_key_exists($id, $this->languages)) {
+            $db = $this->db;
+            $sql = $db->select()
+                      ->from('s_core_shops', array('id'))
+                      ->where($this->qi('id') . ' = ?', $id)
+                      ->orWhere($this->qi('main_id') . ' = ?', $id);
+
+            $locales = $this->getLocales();
+            $this->languages[$id] = array();
+            foreach ($db->fetchCol($sql) as $langShopId) {
+                $this->languages[$id][] = $locales[$langShopId]['locale'];
+            }
+        }
+        return $this->languages[$id];
+    }
+
+    /**
+     * get category IDs for this (sub)shop
+     *
+     * @param int $id
+     * @return array
+     */
+    protected function getShopCategoryIds($id) {
+        $db = $this->db;
+        $sql = $db->select()
+                  ->from('s_core_shops', array('category_id'))
+                  ->where($this->qi('id') . ' = ?', $id)
+                  ->orWhere($this->qi('main_id') . ' = ?', $id);
+        return $db->fetchCol($sql);
     }
 
     /**
@@ -1337,7 +1387,6 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
     protected function getLastDelta() {
         if (empty($this->deltaLast)) {
             $this->deltaLast = '1950-01-01 12:00:00';
-
             $db = $this->db;
             $sql = $db->select()
                       ->from('exports', array('export_date'))
@@ -1372,7 +1421,6 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
         }
 
         $containers = $this->xml->addChild('containers');
-//        $containers = $xml->xpath('//containers')[0];
         $productsContainer = $containers->addChild('container');
         $productsContainer->addAttribute('id', 'products');
         $productsContainer->addAttribute('type', 'products');
