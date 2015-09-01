@@ -40,6 +40,7 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
 
     protected $dirPath;
     protected $db;
+    protected $log;
     protected $delta;
     protected $deltaLast;
     protected $fileHandle;
@@ -67,6 +68,7 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
         $this->delta = $delta;
         $this->dirPath = $dirPath;
         $this->db = Shopware()->Db();
+        $this->log = Shopware()->PluginLogger();
     }
 
     /**
@@ -78,6 +80,8 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
      */
     public function run()
     {
+        $type = $this->delta ? 'delta' : 'full';
+        $this->log->info("Start of boxalino $type data sync");
         $data = array();
         foreach ($this->getMainShopIds() as $id) {
             // if data sync is enabled, run it for that shop id
@@ -98,6 +102,7 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
                 );
             }
         }
+        $this->log->info("End of boxalino $type data sync, result: " . json_encode($data));
         return $data;
     }
 
@@ -110,6 +115,7 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
     protected function createExportFiles($id)
     {
         if (!is_dir($this->dirPath) && !@mkdir($this->dirPath, 0777, true)) {
+            $this->log->error("Unable to create $this->dirPath for boxalino data sync");
             return false;
         }
 
@@ -123,6 +129,7 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
 
         $zip = new ZipArchive();
         if ($zip->open($zip_name, ZIPARCHIVE::CREATE) !== TRUE) {
+            $this->log->error("Unable to create ZIP file $zip_name for boxalino data sync");
             return false;
         }
 
