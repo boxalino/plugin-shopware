@@ -1,59 +1,67 @@
 <?php
-//use Doctrine\Common\Collections\ArrayCollection;
-
+/**
+ * search interceptor for shopware 5 and following
+ * uses SearchBundle
+ */
 class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
 {
     /**
      * @var Shopware_Plugins_Frontend_Boxalino_Bootstrap
      */
-    private $bootstrap;
-
-    private $categories;
+    protected $bootstrap;
 
     /**
      * @var Shopware\Components\DependencyInjection\Container
      */
-    private $container;
+    protected $container;
 
     /**
      * @var Shopware_Controllers_Frontend_Index
      */
-    private $controller;
+    protected $controller;
 
     /**
      * @var Enlight_Event_EventManager
      */
-    private $eventManager;
+    protected $eventManager;
 
     /**
      * @var FacetHandlerInterface[]
      */
-    private $facetHandlers;
+    protected $facetHandlers;
 
     /**
      * @var Shopware_Plugins_Frontend_Boxalino_P13NHelper
      */
-    private $helper;
+    protected $helper;
 
     /**
      * @var Enlight_Controller_Request_Request
      */
-    private $request;
+    protected $request;
 
     /**
      * @var Enlight_View_Default
      */
-    private $view;
+    protected $view;
 
-    function __construct(Shopware_Plugins_Frontend_Boxalino_Bootstrap $bootstrap)
+    /**
+     * constructor
+     * @param Shopware_Plugins_Frontend_Boxalino_Bootstrap $bootstrap
+     */
+    public function __construct(Shopware_Plugins_Frontend_Boxalino_Bootstrap $bootstrap)
     {
         $this->bootstrap = $bootstrap;
         $this->container = Shopware()->Container();
         $this->helper = Shopware_Plugins_Frontend_Boxalino_P13NHelper::instance();
         $this->eventManager = Enlight()->Events();
-        $this->facetHandlers = $this->registerFacetHandlers();
     }
 
+    /**
+     * perform autocompletion suggestion
+     * @param Enlight_Event_EventArgs $arguments
+     * @return boolean
+     */
     public function ajaxSearch(Enlight_Event_EventArgs $arguments)
     {
         if (!Shopware()->Config()->get('boxalino_search_enabled')) {
@@ -87,6 +95,11 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
         return false;
     }
 
+    /**
+     * perform search
+     * @param Enlight_Event_EventArgs $arguments
+     * @return boolean
+     */
     public function search(Enlight_Event_EventArgs $arguments)
     {
         if (!Shopware()->Config()->get('boxalino_search_enabled')) {
@@ -161,8 +174,9 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
 
     /**
      * Initialize important variables
+     * @param Enlight_Event_EventArgs $arguments
      */
-    private function init(Enlight_Event_EventArgs $arguments)
+    protected function init(Enlight_Event_EventArgs $arguments)
     {
         $this->controller = $arguments->getSubject();
         $this->request = $this->controller->Request();
@@ -205,7 +219,7 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
     /**
      * @return string
      */
-    private function getSearchTerm()
+    protected function getSearchTerm()
     {
         $term = $this->Request()->get('sSearch', '');
 
@@ -269,7 +283,7 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
     /**
      * @return Shopware\Bundle\SearchBundle\FacetHandlerInterface[]
      */
-    private function registerFacetHandlers()
+    protected function registerFacetHandlers()
     {
         // did not find a way to use the service tag "facet_handler_dba"
         // it seems the dependency injection CompilerPass is not available to plugins?
@@ -296,8 +310,11 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
      * @throws \Exception
      * @return Shopware\Bundle\SearchBundle\FacetHandlerInterface
      */
-    private function getFacetHandler(SearchBundle\FacetInterface $facet)
+    protected function getFacetHandler(SearchBundle\FacetInterface $facet)
     {
+        if ($this->facetHandlers == null) {
+            $this->facetHandlers = $this->registerFacetHandlers();
+        }
         foreach ($this->facetHandlers as $handler) {
             if ($handler->supportsFacet($facet)) {
                 return $handler;
@@ -313,7 +330,7 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
      * @throws \Exception
      * @return Shopware\Bundle\SearchBundle\FacetResultInterface[]
      */
-    private function createFacets(Shopware\Bundle\SearchBundle\Criteria $criteria, ShopContextInterface $context)
+    protected function createFacets(Shopware\Bundle\SearchBundle\Criteria $criteria, ShopContextInterface $context)
     {
         $facets = array();
 
@@ -336,7 +353,7 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
         return $facets;
     }
 
-    private function prepareResults($p13nResults)
+    protected function prepareResults($p13nResults)
     {
         $sResults = array();
         foreach($p13nResults['results'] as $p13nResult) {
@@ -373,7 +390,7 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
      * @param Shopware\Bundle\SearchBundle\FacetResultInterface[] $facets
      * @return array
      */
-    private function getOptionsFromFacets($facets)
+    protected function getOptionsFromFacets($facets)
     {
         $options = [];
         foreach ($facets as $facet) {
@@ -429,7 +446,7 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
      * @param Shopware\Bundle\SearchBundle\FacetResult\TreeItem[] $values
      * @return null|Shopware\Bundle\SearchBundle\FacetResult\TreeItem
      */
-    private function getLowestActiveTreeItem($values)
+    protected function getLowestActiveTreeItem($values)
     {
         foreach ($values as $value) {
             if ($value->isActive()) {
@@ -451,7 +468,7 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
      * @param \com\boxalino\p13n\api\thrift\ChoiceResponse $choiceResponse
      * @return Shopware\Bundle\SearchBundle\FacetResultInterface[]
      */
-    private function updateFacetsWithResult($facets, $choiceResponse) {
+    protected function updateFacetsWithResult($facets, $choiceResponse) {
         foreach ($facets as $key => $facet) {
             if ($facet instanceof Shopware\Bundle\SearchBundle\FacetResult\FacetResultGroup) {
                 /* @var Shopware\Bundle\SearchBundle\FacetResult\FacetResultGroup $facet */
@@ -559,7 +576,7 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
      * @param com\boxalino\p13n\api\thrift\FacetValue[] $FacetValues
      * @return Shopware\Bundle\SearchBundle\FacetResult\TreeItem[]
      */
-    private function updateTreeItemsWithFacetValue($values, $FacetValues) {
+    protected function updateTreeItemsWithFacetValue($values, $FacetValues) {
         /* @var Shopware\Bundle\SearchBundle\FacetResult\TreeItem $value */
         foreach ($values as $key => $value) {
             $id = (string) $value->getId();

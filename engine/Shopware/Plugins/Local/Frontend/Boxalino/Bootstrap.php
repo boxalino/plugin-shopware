@@ -19,7 +19,12 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
     {
         parent::__construct($name, $info);
 
-        $this->searchInterceptor = new Shopware_Plugins_Frontend_Boxalino_SearchInterceptor($this);
+        if (version_compare(Shopware::VERSION, '5.0.0', '>=')) {
+            $searchInterceptor = new Shopware_Plugins_Frontend_Boxalino_SearchInterceptor($this);
+        } else {
+            $searchInterceptor = new Shopware_Plugins_Frontend_Boxalino_SearchInterceptor4($this);
+        }
+        $this->searchInterceptor = $searchInterceptor;
         $this->frontendInterceptor = new Shopware_Plugins_Frontend_Boxalino_FrontendInterceptor($this);
     }
 
@@ -34,12 +39,12 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
 
     public function getLabel()
     {
-        return 'Boxalino';
+        return 'boxalino';
     }
 
     public function getVersion()
     {
-        return '1.0.0';
+        return '1.1.0';
     }
 
     public function getInfo()
@@ -47,10 +52,11 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
         return array(
             'version' => $this->getVersion(),
             'label' => $this->getLabel(),
-            'supplier' => 'Boxalino',
-            'description' => '',
-            'support' => '',
-            'link' => ''
+            'author' => 'boxalino AG',
+            'copyright' => 'Copyright © 2014, boxalino AG',
+            'description' => 'Integrates boxalino search & recommendation into Shopware.',
+            'support' => 'support@boxalino.com',
+            'link' => 'http://www.boxalino.com/',
         );
     }
 
