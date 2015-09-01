@@ -92,7 +92,7 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor4
                 $resultSuppliersAffected = $this->prepareSuppliers($suppliersFacets);
                 $resultPriceRangesAffected = $this->preparePriceRanges($priceFacets);
                 $resultAffectedCategories = $this->prepareCategories($categoryFacets);
-                $resultCurrentCategory = $this->getCurrentCategoryFilter();
+                $resultCurrentCategory = $this->config['filter']['category'] ? $this->config['filter']['category'] : null;
             }
 
             // Generate page array
@@ -137,7 +137,7 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor4
     {
         $categories = array();
         $mainCategoryId = Shopware()->Shop()->getCategory()->getId();
-        $currentCategoryFilter = $this->getCurrentCategoryFilter();
+        $currentCategoryFilter = $this->config['filter']['category'] ? $this->config['filter']['category'] : null;
         $currentCategoryId = empty($currentCategoryFilter) ? $mainCategoryId : $currentCategoryFilter;
         try {
             $categoryCount = array();

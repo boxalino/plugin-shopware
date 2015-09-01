@@ -109,7 +109,7 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
      */
     protected function createExportFiles($id)
     {
-        if (@mkdir($this->dirPath, 0777, true)) {
+        if (!is_dir($this->dirPath) && !@mkdir($this->dirPath, 0777, true)) {
             return false;
         }
 
