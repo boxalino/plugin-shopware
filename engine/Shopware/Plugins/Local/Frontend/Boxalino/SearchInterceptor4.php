@@ -8,7 +8,7 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor4
     extends Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
 {
     private $categories;
-    private $config;
+    private $conf;
 
     /**
      * Price filters to display in frontend
@@ -36,7 +36,7 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor4
      */
     public function search(Enlight_Event_EventArgs $arguments)
     {
-        if (!Shopware()->Config()->get('boxalino_search_enabled')) {
+        if (!$this->Config()->get('boxalino_search_enabled')) {
             return false;
         }
         $this->init($arguments);
@@ -46,38 +46,38 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor4
         // Check if we have a one to one match for ordernumber, then redirect
         $location = $this->searchFuzzyCheck($term);
         if (!empty($location)) {
-            return $this->controller->redirect($location);
+            return $this->Controller()->redirect($location);
         }
 
         $this->View()->loadTemplate('frontend/search/fuzzy.tpl');
 
         // Check if search term met minimum length
-        if (strlen($term) >= (int) Shopware()->Config()->sMINSEARCHLENGHT) {
+        if (strlen($term) >= (int) $this->Config()->sMINSEARCHLENGHT) {
 
             // Load search configuration
             $this->prepareSearchConfiguration($term);
 
             $config = $this->get('config');
             $pageCounts = array_values(explode('|', $config->get('fuzzySearchSelectPerPage')));
-            $pageCount = ($this->config['currentPage']) * $this->config['resultsPerPage'];
-            $pageOffset = ($this->config['currentPage'] - 1) * $this->config['resultsPerPage'];
+            $pageCount = ($this->conf['currentPage']) * $this->conf['resultsPerPage'];
+            $pageOffset = ($this->conf['currentPage'] - 1) * $this->conf['resultsPerPage'];
 
             $this->prepareCategoriesTree();
-            $currentCategoryFilter = $this->config['filter']['category'] ? $this->config['filter']['category'] : null;
-            $choice = $this->helper->search(
+            $currentCategoryFilter = $this->conf['filter']['category'] ? $this->conf['filter']['category'] : null;
+            $choice = $this->Helper()->search(
                 $term, $pageOffset, $pageCount, array(
                     'category' => $currentCategoryFilter,
                     'categoryName' => $array($this->categories[$currentCategoryFilter]['description']),
                     'price' => $this->getCurrentPriceRange(),
-                    'supplier' => !empty($this->config['filter']['supplier']) ? $this->config['filter']['supplier'] : null,
+                    'supplier' => !empty($this->conf['filter']['supplier']) ? $this->conf['filter']['supplier'] : null,
                     'sort' => $this->getSortOrder4()
                 )
             );
-            $results = $this->helper->extractResults($choice);
-            $suppliersFacets = $this->helper->extractFacet($choice, 'products_supplier');
-            $priceFacets = $this->helper->extractFacet($choice, 'discountedPrice');
-            $categoryFacets = $this->helper->extractFacet($choice, 'categories');
-            $ids = $this->helper->extractFacet($choice, 'id');
+            $results = $this->Helper()->extractResults($choice);
+            $suppliersFacets = $this->Helper()->extractFacet($choice, 'products_supplier');
+            $priceFacets = $this->Helper()->extractFacet($choice, 'discountedPrice');
+            $categoryFacets = $this->Helper()->extractFacet($choice, 'categories');
+            $ids = $this->Helper()->extractFacet($choice, 'id');
 
             // Initiate variables
             $resultCount = 0;
@@ -92,26 +92,26 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor4
                 $resultSuppliersAffected = $this->prepareSuppliers($suppliersFacets);
                 $resultPriceRangesAffected = $this->preparePriceRanges($priceFacets);
                 $resultAffectedCategories = $this->prepareCategories($categoryFacets);
-                $resultCurrentCategory = $this->config['filter']['category'] ? $this->config['filter']['category'] : null;
+                $resultCurrentCategory = $this->conf['filter']['category'] ? $this->conf['filter']['category'] : null;
             }
 
             // Generate page array
             $sPages = $this->generatePagesResultArray(
-                $resultCount, $this->config['resultsPerPage'], $this->config['currentPage']
+                $resultCount, $this->conf['resultsPerPage'], $this->conf['currentPage']
             );
 
             // Get additional information for each search result
-            $articles = $this->helper->getLocalArticles($results);
+            $articles = $this->Helper()->getLocalArticles($results);
 
             // Assign result to template
             $this->View()->assign(array(
                 'sPages' => $sPages,
                 'sLinks' => $links,
                 'sPerPage' => $pageCounts,
-                'sRequests' => $this->config,
+                'sRequests' => $this->conf,
                 'sPriceFilter' => $this->configPriceFilter,
                 'sCategoriesTree' => $this->getCategoryTree(
-                    $resultCurrentCategory, $this->config['restrictSearchResultsToCategory']
+                    $resultCurrentCategory, $this->conf['restrictSearchResultsToCategory']
                 ),
                 'sSearchResults' => array(
                     'sArticles' => $articles,
@@ -137,7 +137,7 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor4
     {
         $categories = array();
         $mainCategoryId = Shopware()->Shop()->getCategory()->getId();
-        $currentCategoryFilter = $this->config['filter']['category'] ? $this->config['filter']['category'] : null;
+        $currentCategoryFilter = $this->conf['filter']['category'] ? $this->conf['filter']['category'] : null;
         $currentCategoryId = empty($currentCategoryFilter) ? $mainCategoryId : $currentCategoryFilter;
         try {
             $categoryCount = array();
@@ -216,8 +216,8 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor4
 
         if (!empty($this->Request()->sPerPage)) {
             $config['resultsPerPage'] = (int) $this->Request()->sPerPage;
-        } elseif (!empty(Shopware()->Config()->sFUZZYSEARCHRESULTSPERPAGE)) {
-            $config['resultsPerPage'] = (int) Shopware()->Config()->sFUZZYSEARCHRESULTSPERPAGE;
+        } elseif (!empty($this->Config()->sFUZZYSEARCHRESULTSPERPAGE)) {
+            $config['resultsPerPage'] = (int) $this->Config()->sFUZZYSEARCHRESULTSPERPAGE;
         } else {
             $config['resultsPerPage'] = 8;
         }
@@ -235,7 +235,7 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor4
         $config['shopCustomerGroupTax'] = Shopware()->System()->sUSERGROUPDATA['tax'];
         $config['shopCustomerGroupId'] = Shopware()->System()->sUSERGROUPDATA['id'];
         $config['shopCurrencyFactor'] = Shopware()->System()->sCurrency['factor'];
-        $this->config = $config;
+        $this->conf = $config;
     }
 
     /**
@@ -243,8 +243,8 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor4
      * @return NULL
      */
     private function getCurrentPriceRange() {
-        if (!empty($this->config['filter']['price'])) {
-            return $this->configPriceFilter[$this->config['filter']['price']];
+        if (!empty($this->conf['filter']['price'])) {
+            return $this->configPriceFilter[$this->conf['filter']['price']];
         } else {
             return null;
         }
@@ -252,8 +252,8 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor4
 
     private function getSortOrder4()
     {
-        $sortBy = $this->config['sortSearchResultsBy'];
-        $direction = $this->config['sortSearchResultsByDirection'];
+        $sortBy = $this->conf['sortSearchResultsBy'];
+        $direction = $this->conf['sortSearchResultsByDirection'];
         // @todo: fix sorting by other fields
         switch ($sortBy) {
 //            case 1:

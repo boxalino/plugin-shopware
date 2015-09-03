@@ -242,8 +242,12 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
             'value' => 'autocomplete',
         ), array(
             'name' => 'recommendation_widget_name',
-            'label' => 'Recommendation Choice ID',
-            'value' => 'recommendation',
+            'label' => 'Similar Recommendation Choice ID',
+            'value' => 'recommendation_similar',
+        ), array(
+            'name' => 'recommendation_related_widget_name',
+            'label' => 'Related Recommendation Choice ID',
+            'value' => 'recommendation_related',
         ), array(
             'type' => 'select',
             'name' => 'tracking_enabled',

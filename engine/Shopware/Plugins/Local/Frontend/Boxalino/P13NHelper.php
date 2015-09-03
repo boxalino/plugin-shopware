@@ -61,7 +61,6 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
     {
         $p13nChoiceId = Shopware()->Config()->get('boxalino_search_widget_name');
         $p13nHost = Shopware()->Config()->get('boxalino_host');
-        //$p13nAccount = Shopware()->Config()->get('boxalino_account');
         $p13nAccount = $this->getAccount();
         $p13nUsername = Shopware()->Config()->get('boxalino_username');
         $p13nPassword = Shopware()->Config()->get('boxalino_password');
@@ -69,28 +68,36 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
 
         $p13nSearch = $text;
         $p13nLanguage = $this->getShortLocale();
-        $p13nFields = array('id', 'title', 'body', 'mainnumber', 'name', 'net_price', 'standardPrice',
+        // fields you want in the response, i.e. title, body, etc.
+        $p13nFields = array(
+            'id',
+            'title',
+            'body',
+            'mainnumber',
+            'name',
+            'net_price',
+            'standardPrice',
             'products_mediaId',
             'products_supplier',
             'products_net_price',
             'products_tax',
             'products_group_id'
-        ); // fields you want in the response, i.e. title, body, etc.
+        );
 
 
-// Create basic P13n client
+        // Create basic P13n client
         $p13n = new HttpP13n();
         $p13n->setHost($p13nHost);
         $p13n->setAuthorization($p13nUsername, $p13nPassword);
 
-// Create main choice request object
+        // Create main choice request object
         $choiceRequest = $p13n->getChoiceRequest($p13nAccount, $cookieDomain);
 
-// Setup main choice inquiry object
+        // Setup main choice inquiry object
         $inquiry = new \com\boxalino\p13n\api\thrift\ChoiceInquiry();
         $inquiry->choiceId = $p13nChoiceId;
 
-// Setup a search query
+        // Setup a search query
         $searchQuery = new \com\boxalino\p13n\api\thrift\SimpleSearchQuery();
         $searchQuery->indexId = $p13nAccount;
         $searchQuery->language = $p13nLanguage;
@@ -239,28 +246,27 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
     public function findRawRecommendations($id, $role, $p13nChoiceId, $count = 5, $fieldName = 'products_group_id')
     {
         $p13nHost = Shopware()->Config()->get('boxalino_host');
-        //$p13nAccount = Shopware()->Config()->get('boxalino_account');
         $p13nAccount = $this->getAccount();
         $p13nUsername = Shopware()->Config()->get('boxalino_username');
         $p13nPassword = Shopware()->Config()->get('boxalino_password');
         $cookieDomain = Shopware()->Config()->get('boxalino_domain');
 
-        $p13nLanguage = 'de'; // or de, fr, it, etc.
+        $p13nLanguage = $this->getShortLocale();
         $p13nFields = array('id', 'products_group_id');
 
-// Create basic P13n client
+        // Create basic P13n client
         $p13n = new HttpP13n();
         $p13n->setHost($p13nHost);
         $p13n->setAuthorization($p13nUsername, $p13nPassword);
 
-// Create main choice request object
+        // Create main choice request object
         $choiceRequest = $p13n->getChoiceRequest($p13nAccount, $cookieDomain);
 
-// Setup main choice inquiry object
+        // Setup main choice inquiry object
         $inquiry = new \com\boxalino\p13n\api\thrift\ChoiceInquiry();
         $inquiry->choiceId = $p13nChoiceId;
 
-// Setup a search query
+        // Setup a search query
         $searchQuery = new \com\boxalino\p13n\api\thrift\SimpleSearchQuery();
         $searchQuery->indexId = $p13nAccount;
         $searchQuery->language = $p13nLanguage;
@@ -268,11 +274,10 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
         $searchQuery->offset = 0;
         $searchQuery->hitCount = $count;
 
-// Connect search query to the inquiry
+        // Connect search query to the inquiry
         $inquiry->simpleSearchQuery = $searchQuery;
         $inquiry->contextItems = array(
             new \com\boxalino\p13n\api\thrift\ContextItem(array(
-                //'indexId' => Shopware()->Config()->get('boxalino_account'),
                 'indexId' => $this->getAccount(),
                 'fieldName' => $fieldName,
                 'contextItemId' => $id,
@@ -280,10 +285,10 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
             ))
         );
 
-// Add inquiry to choice request
+        // Add inquiry to choice request
         $choiceRequest->inquiries = array($inquiry);
 
-// Call the service
+        // Call the service
         try {
             $choiceResponse = $p13n->choose($choiceRequest);
             $this->debug($choiceRequest, $choiceResponse);

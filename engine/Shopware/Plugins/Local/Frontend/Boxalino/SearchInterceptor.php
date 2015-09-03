@@ -4,21 +4,12 @@
  * uses SearchBundle
  */
 class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
+    extends Shopware_Plugins_Frontend_Boxalino_Interceptor
 {
-    /**
-     * @var Shopware_Plugins_Frontend_Boxalino_Bootstrap
-     */
-    protected $bootstrap;
-
     /**
      * @var Shopware\Components\DependencyInjection\Container
      */
-    protected $container;
-
-    /**
-     * @var Shopware_Controllers_Frontend_Index
-     */
-    protected $controller;
+    private $container;
 
     /**
      * @var Enlight_Event_EventManager
@@ -31,29 +22,13 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
     protected $facetHandlers;
 
     /**
-     * @var Shopware_Plugins_Frontend_Boxalino_P13NHelper
-     */
-    protected $helper;
-
-    /**
-     * @var Enlight_Controller_Request_Request
-     */
-    protected $request;
-
-    /**
-     * @var Enlight_View_Default
-     */
-    protected $view;
-
-    /**
      * constructor
      * @param Shopware_Plugins_Frontend_Boxalino_Bootstrap $bootstrap
      */
     public function __construct(Shopware_Plugins_Frontend_Boxalino_Bootstrap $bootstrap)
     {
-        $this->bootstrap = $bootstrap;
+        parent::__construct($bootstrap);
         $this->container = Shopware()->Container();
-        $this->helper = Shopware_Plugins_Frontend_Boxalino_P13NHelper::instance();
         $this->eventManager = Enlight()->Events();
     }
 
@@ -64,25 +39,22 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
      */
     public function ajaxSearch(Enlight_Event_EventArgs $arguments)
     {
-        if (!Shopware()->Config()->get('boxalino_search_enabled')) {
+        if (!$this->Config()->get('boxalino_search_enabled')) {
             return false;
         }
         $this->init($arguments);
-
-        /* @var Zend_Controller_Response_Http $response */
-        $response = $this->controller->Response();
 
         Enlight()->Plugins()->Controller()->Json()->setPadding();
 
         $this->View()->loadTemplate('frontend/search/ajax.tpl');
 
         $term = $this->getSearchTerm();
-        if (empty($term) || strlen($term) < Shopware()->Config()->MinSearchLenght) {
+        if (empty($term) || strlen($term) < $this->Config()->MinSearchLenght) {
             return false;
         }
 
-        $results = $this->helper->extractResults(
-            $this->helper->quickSearch($term)
+        $results = $this->Helper()->extractResults(
+            $this->Helper()->quickSearch($term)
         );
         $sResults = $this->prepareResults($results);
 
@@ -102,7 +74,7 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
      */
     public function search(Enlight_Event_EventArgs $arguments)
     {
-        if (!Shopware()->Config()->get('boxalino_search_enabled')) {
+        if (!$this->Config()->get('boxalino_search_enabled')) {
             return false;
         }
         $this->init($arguments);
@@ -112,13 +84,13 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
         // Check if we have a one to one match for ordernumber, then redirect
         $location = $this->searchFuzzyCheck($term);
         if (!empty($location)) {
-            return $this->controller->redirect($location);
+            return $this->Controller()->redirect($location);
         }
 
         $this->View()->loadTemplate('frontend/search/fuzzy.tpl');
 
         // Check if search term met minimum length
-        if (strlen($term) >= (int) Shopware()->Config()->sMINSEARCHLENGHT) {
+        if (strlen($term) >= (int) $this->Config()->sMINSEARCHLENGHT) {
 
             /* @var ProductContextInterface $context */
             $context  = $this->get('shopware_storefront.context_service')->getProductContext();
@@ -135,14 +107,14 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
             $pageCount = $criteria->getLimit();
             $pageOffset = $criteria->getOffset();
 
-            $choice = $this->helper->search(
+            $choice = $this->Helper()->search(
                 $term, $pageOffset, $pageCount, $options
             );
-            $results = $this->helper->extractResults($choice);
+            $results = $this->Helper()->extractResults($choice);
             $facets = $this->updateFacetsWithResult($facets, $choice);
 
             // Get additional information for each search result
-            $articles = $this->helper->getLocalArticles($results);
+            $articles = $this->Helper()->getLocalArticles($results);
 
             $request = $this->Request();
             $params = $request->getParams();
@@ -173,18 +145,6 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
     }
 
     /**
-     * Initialize important variables
-     * @param Enlight_Event_EventArgs $arguments
-     */
-    protected function init(Enlight_Event_EventArgs $arguments)
-    {
-        $this->controller = $arguments->getSubject();
-        $this->request = $this->controller->Request();
-        $this->view = $this->controller->View();
-        $this->helper->setRequest($this->request);
-    }
-
-    /**
      * Get service from resource loader
      *
      * @param string $name
@@ -194,27 +154,6 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
     {
         return $this->container->get($name);
     }
-
-    /**
-     * Returns view instance
-     *
-     * @return Enlight_View_Default
-     */
-    public function View()
-    {
-        return $this->view;
-    }
-
-    /**
-     * Returns request instance
-     *
-     * @return Enlight_Controller_Request_Request
-     */
-    public function Request()
-    {
-        return $this->request;
-    }
-
 
     /**
      * @return string
@@ -239,44 +178,38 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
      */
     protected function searchFuzzyCheck($search)
     {
-        $minSearch = empty(Shopware()->Config()->sMINSEARCHLENGHT) ? 2 : (int) Shopware()->Config()->sMINSEARCHLENGHT;
+        $minSearch = empty($this->Config()->sMINSEARCHLENGHT) ? 2 : (int) $this->Config()->sMINSEARCHLENGHT;
+        $db = Shopware()->Db();
         if (!empty($search) && strlen($search) >= $minSearch) {
-            $sql = '
-                SELECT DISTINCT articleID
-                FROM s_articles_details
-                WHERE ordernumber = ?
-                GROUP BY articleID
-                LIMIT 2
-            ';
-            $articles = Shopware()->Db()->fetchCol($sql, array($search));
+            $ordernumber = $db->quoteIdentifier('ordernumber');
+            $sql = $db->select()
+                      ->distinct()
+                      ->from('s_articles_details', array('articleID'))
+                      ->where("$ordernumber = ?", $search)
+                      ->limit(2);
+            $articles = $db->fetchCol($sql);
 
             if (empty($articles)) {
-                $sql = "
-                    SELECT DISTINCT articleID
-                    FROM s_articles_details
-                    WHERE ordernumber = ?
-                    OR ? LIKE CONCAT(ordernumber, '%')
-                    GROUP BY articleID
-                    LIMIT 2
-                ";
-                $articles = Shopware()->Db()->fetchCol($sql, array($search, $search));
+                $percent = $db->quote('%');
+                $sql->orWhere("? LIKE CONCAT($ordernumber, $percent)", $search);
+                $articles = $db->fetchCol($sql);
             }
         }
         if (!empty($articles) && count($articles) == 1) {
-            $sql = '
-                SELECT ac.articleID
-                FROM  s_articles_categories_ro ac
-                INNER JOIN s_categories c
-                    ON  c.id = ac.categoryID
-                    AND c.active = 1
-                    AND c.id = ?
-                WHERE ac.articleID = ?
-                LIMIT 1
-            ';
-            $articles = Shopware()->Db()->fetchCol($sql, array(Shopware()->Shop()->get('parentID'), $articles[0]));
+            $sql = $db->select()
+                      ->from(array('ac' => 's_articles_categories_ro'), array('ac.articleID'))
+                      ->joinInner(
+                        array('c' => 's_categories'),
+                        $db->quoteIdentifier('c.id') . ' = ' . $db->quoteIdentifier('ac.categoryID') . ' AND ' .
+                        $db->quoteIdentifier('c.active') . ' = ' . $db->quote(1) . ' AND ' .
+                        $db->quoteIdentifier('c.id') . ' = ' . $db->quote(Shopware()->Shop()->get('parentID'))
+                      )
+                      ->where($db->quoteIdentifier('ac.articleID') . ' = ?', $articles[0])
+                      ->limit(1);
+            $articles = $db->fetchCol($sql);
         }
         if (!empty($articles) && count($articles) == 1) {
-            return $this->controller->Front()->Router()->assemble(array('sViewport' => 'detail', 'sArticle' => $articles[0]));
+            return $this->Controller()->Front()->Router()->assemble(array('sViewport' => 'detail', 'sArticle' => $articles[0]));
         }
     }
 
@@ -372,7 +305,7 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
                 'extension' => null,
                 'vote' => '0.00|0'
             );
-            $result['link'] = $this->controller->Front()->Router()->assemble(array('controller' => 'detail', 'sArticle' => $p13nResult['products_group_id'], 'title' => $result['name']));
+            $result['link'] = $this->Controller()->Front()->Router()->assemble(array('controller' => 'detail', 'sArticle' => $p13nResult['products_group_id'], 'title' => $result['name']));
 
             $mediaModel = Shopware()->Models()->find('Shopware\Models\Media\Media', intval($p13nResult['products_mediaId']));
             if ($mediaModel != null) {
@@ -486,7 +419,7 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
                 case 'price':
                     /* @var Shopware\Bundle\SearchBundle\FacetResult\RangeFacetResult $facet
                      * @var com\boxalino\p13n\api\thrift\FacetValue $FacetValue */
-                    $FacetValue = current($this->helper->extractFacet($choiceResponse, 'discountedPrice'));
+                    $FacetValue = current($this->Helper()->extractFacet($choiceResponse, 'discountedPrice'));
                     $facets[$key] = new Shopware\Bundle\SearchBundle\FacetResult\RangeFacetResult(
                         $facet->getFacetName(),
                         $facet->isActive(),
@@ -503,7 +436,7 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
                     break;
                 case 'category':
                     /* @var Shopware\Bundle\SearchBundle\FacetResult\TreeFacetResult $facet */
-                    $unorderedFacetValues = $this->helper->extractFacet($choiceResponse, 'categories');
+                    $unorderedFacetValues = $this->Helper()->extractFacet($choiceResponse, 'categories');
                     $FacetValues = [];
                     foreach ($unorderedFacetValues as $FacetValue) {
                         $FacetValues[$FacetValue->hierarchyId] = $FacetValue;
@@ -523,7 +456,7 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
                     $productPropertyName = 'brand';
                 case 'property':
                     /* @var Shopware\Bundle\SearchBundle\FacetResult\MediaListFacetResult|Shopware\Bundle\SearchBundle\FacetResult\ValueListFacetResult $facet */
-                    $FacetValues = $this->helper->extractFacet($choiceResponse, 'products_' . $productPropertyName);
+                    $FacetValues = $this->Helper()->extractFacet($choiceResponse, 'products_' . $productPropertyName);
                     $valueList = [];
                     /* @var com\boxalino\p13n\api\thrift\FacetValue $FacetValue */
                     foreach ($FacetValues as $FacetValue) {
