@@ -5,14 +5,16 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
     protected $request;
     protected $manager;
 
-    const ITEM_BRANDS = 'item_brands';
-    const ITEM_BRANDS_CSV = 'item_brands.csv';
-    const ITEM_PROPERTIES = 'item_vals';
-    const ITEM_PROPERTIES_CSV = 'item_properties.csv';
     const CATEGORIES = 'categories';
     const CATEGORIES_CSV = 'categories.csv';
+    const ITEM_BRANDS = 'item_brands';
+    const ITEM_BRANDS_CSV = 'item_brands.csv';
     const ITEM_CATEGORIES = 'item_categories';
     const ITEM_CATEGORIES_CSV = 'item_categories.csv';
+    const ITEM_PROPERTIES = 'item_vals';
+    const ITEM_PROPERTIES_CSV = 'item_properties.csv';
+    const ITEM_TRANSLATIONS = 'item_translations';
+    const ITEM_TRANSLATIONS_CSV = 'item_translations.csv';
     const CUSTOMERS = 'customer_vals';
     const CUSTOMERS_CSV = 'customers.csv';
     const TRANSACTIONS = 'transactions';
@@ -139,6 +141,9 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
         $zip->addFile($this->getBrands($id), self::ITEM_BRANDS_CSV);
         $zip->addFile($this->getCategories($id), self::CATEGORIES_CSV);
         $zip->addFile($this->getItemCategories($id), self::ITEM_CATEGORIES_CSV);
+        if (count($this->getShopLocales($id)) > 1) {
+            $zip->addFile($this->getTranslations($id), self::ITEM_TRANSLATIONS_CSV);
+        }
         $zip->addFile($this->getCustomers($id), self::CUSTOMERS_CSV);
         $zip->addFile($this->getTransactions($id), self::TRANSACTIONS_CSV);
         $zip->addFromString('properties.xml', $this->finishAndGetXml());
@@ -226,6 +231,7 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
      */
     protected function getArticles($id)
     {
+        $this->log->debug("start collecting articles for shop id $id");
         // property descriptions for XML configuration
         $this->propertyDescriptions[self::ITEM_PROPERTIES] = array(
             'source' => self::ITEM_PROPERTIES,
@@ -324,8 +330,6 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
         $pipe = $db->quote('|');
         $empty = $db->quote('');
         $colon = $db->quote(':');
-        $article = $db->quote('article');
-        $variant = $db->quote('variant');
         $quoted0 = $db->quote(0);
         $quoted1 = $db->quote(1);
         $quoted2 = $db->quote(2);
@@ -339,10 +343,7 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
         $fieldName = $this->qi('name');
         $fieldPosition = $this->qi('position');
         $fieldArticleId = $this->qi('articleID');
-        $fieldObjectKey = $this->qi('objectkey');
-        $fieldObjectType = $this->qi('objecttype');
         $fieldCategoryId = $this->qi('categoryID');
-        $fieldObjectLanguage = $this->qi('objectlanguage');
 
         $ai = $this->qi('ai');
         $cg = $this->qi('cg');
@@ -393,22 +394,12 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
             'pricegroupID',
             'pricegroupActive',
             'laststock',
-        );
-        foreach ($simpleFields as $key) {
-            $fields[$key] = $key;
-        }
-
-        // locale fields
-        $localeFields = array(
             'name',
             'description',
             'description_long',
         );
-        $locales = $this->getShopLocales($id);
-        foreach ($localeFields as $key) {
-            foreach ($locales as $locale) {
-                $fields[$key . '_' . $locale] = $key;
-            }
+        foreach ($simpleFields as $key) {
+            $fields[$key] = $key;
         }
 
         // relations
@@ -519,11 +510,9 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
                 "IF($dReleasedate = $zeroDate, $empty, $dReleasedate)"
             ),
         );
-        foreach ($locales as $locale) {
-            $fields['additionaltext_' . $locale] = 'additionaltext';
-        }
         $simpleFields = array(
             'ordernumber',
+            'additionaltext',
             'instock',
             'stockmin',
             'shippingtime',
@@ -674,32 +663,35 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
             }
         }
 
-        // translations as serialized PHP objects
+        // reduce scope to items that are in the current (sub)shops languages
         $shopLanguages = $this->getLocales();
-        foreach ($locales as $locale) {
+        $localeShops = array();
+        foreach ($this->getShopLocales($id) as $locale) {
             foreach ($shopLanguages as $l) {
                 if ($l['locale'] == $locale) {
-                    $localeId = $l['locale_id'];
-                    break;
+                    $localeShops[$l['shop_id']] = $l['locale_id'];
                 }
             }
-            $quotedTableKey = $this->qi('ta_' . $localeId);
-            $quotedLanguage = $db->quote($localeId);
-            $sql->joinLeft(
-                    array('ta_' . $localeId => 's_core_translations'),
-                    "$quotedTableKey.$fieldObjectKey = $aId AND
-                    $quotedTableKey.$fieldObjectType = $article AND
-                    $quotedTableKey.$fieldObjectLanguage = $quotedLanguage",
-                    array('article_translation_' . $locale => 'objectdata')
-            );
-            $sql->joinLeft(
-                    array('td_' . $localeId => 's_core_translations'),
-                    "$quotedTableKey.$fieldObjectKey = $dId AND
-                    $quotedTableKey.$fieldObjectType = $variant AND
-                    $quotedTableKey.$fieldObjectLanguage = $quotedLanguage",
-                    array('detail_translation_' . $locale => 'objectdata')
-            );
         }
+        $cPath = $this->qi('c.path');
+        $quotedMinusOne = $db->quote(-1);
+        $quotedShopIds = $db->quote(array_keys($localeShops));
+        $sql->join(
+                array('ac' => 's_articles_categories'),
+                $this->qi('ac.articleID') . " = $aId",
+                array()
+              )
+              ->join(
+                array('c' => 's_categories'),
+                $this->qi('c.id') . ' = ' . $this->qi('ac.categoryID'),
+                array()
+              )
+              ->join(
+                array('sc' => 's_core_shops'),
+                $this->qi('sc.category_id') . " = SUBSTRING_INDEX(TRIM($pipe FROM $cPath), $pipe, $quotedMinusOne) AND " .
+                $this->qi('sc.id') . " IN ($quotedShopIds)",
+                array()
+              );
 
         $stmt = $db->query($sql);
         $sql = null;
@@ -711,7 +703,7 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
 
         $first = true;
         while ($row = $stmt->fetch()) {
-            $row = $this->prepareArticleRow($row, $locales);
+            $row = $this->prepareArticleRow($row);
 
             if ($first) {
                 $first = false;
@@ -730,6 +722,7 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
      */
     protected function getBrands($id)
     {
+        $this->log->debug("start collecting brands for shop id $id");
         // prepare XML configuration
         $this->propertyDescriptions[self::ITEM_BRANDS] = array(
             'source' => self::ITEM_BRANDS,
@@ -802,6 +795,7 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
      */
     protected function getCategories($id)
     {
+        $this->log->debug("start collecting categories for shop id $id");
         // prepare XML configuration
         $this->propertyDescriptions[self::CATEGORIES] = array(
             'source' => self::CATEGORIES,
@@ -866,6 +860,7 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
      */
     protected function getItemCategories($id)
     {
+        $this->log->debug("start collecting item categories for shop id $id");
         // prepare XML configuration
         $this->propertyDescriptions[self::ITEM_CATEGORIES] = array(
             'source' => self::ITEM_CATEGORIES,
@@ -937,8 +932,168 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
      * @param int $id
      * @return string
      */
+    protected function getTranslations($id)
+    {
+        $this->log->debug("start collecting translations for shop id $id");
+        // prepare XML configuration
+        $this->propertyDescriptions[self::ITEM_TRANSLATIONS] = array(
+            'source' => self::ITEM_TRANSLATIONS,
+            'fields' => array(
+                'name' => array('type'=>'title'),
+                'description' => array('type' => 'body'),
+                'additionaltext' => array('type' => 'text'),
+            )
+        );
+        unset($this->propertyDescriptions[self::ITEM_PROPERTIES]['fields']['name']);
+        unset($this->propertyDescriptions[self::ITEM_PROPERTIES]['fields']['description']);
+        unset($this->propertyDescriptions[self::ITEM_PROPERTIES]['fields']['additionaltext']);
+
+        $sources = $this->xml->xpath('//sources');
+        $sources = $sources[0];
+        $source = $sources->addChild('source');
+        $source->addAttribute('type', 'item_data_file');
+        $source->addAttribute('id', self::ITEM_TRANSLATIONS);
+        $source->addChild('file')->addAttribute('value', self::ITEM_TRANSLATIONS_CSV);
+        $source->addChild('itemIdColumn')->addAttribute('value', 'item_id');
+        $this->appendXmlOptions($source);
+
+        // prepare variables
+        $shopLanguages = $this->getLocales();
+        $localeShops = array();
+        foreach ($this->getShopLocales($id) as $locale) {
+            foreach ($shopLanguages as $l) {
+                if ($l['locale'] == $locale) {
+                    $localeShops[$l['shop_id']] = $l['locale_id'];
+                }
+            }
+        }
+        $db = $this->db;
+
+        $pipe = $db->quote('|');
+        $article = $db->quote('article');
+        $variant = $db->quote('variant');
+        $quotedMinusOne = $db->quote(-1);
+        $quotedShopIds = $db->quote(array_keys($localeShops));
+
+        $fieldObjectKey = $this->qi('objectkey');
+        $fieldObjectType = $this->qi('objecttype');
+        $fieldObjectLanguage = $this->qi('objectlanguage');
+
+        $aId = $this->qi('a.id');
+        $dId = $this->qi('d.id');
+        $sId = $this->qi('s.id');
+        $cPath = $this->qi('c.path');
+        $acArticleId = $this->qi('ac.articleID');
+        $sCategoryId = $this->qi('s.category_id');
+
+        // prepare query
+        $sql = $db->select()
+                  ->from(
+                    array('ac' => 's_articles_categories'),
+                    array('id' => 'articleID')
+                  )
+                  ->join(
+                    array('d' => 's_articles_details'),
+                    $this->qi('d.articleID') . " = $acArticleId AND " .
+                    $this->qi('d.kind') . ' <> ' . $db->quote(3),
+                    array()
+                  )
+                  ->join(
+                    array('c' => 's_categories'),
+                    $this->qi('c.id') . ' = ' . $this->qi('ac.categoryID'),
+                    array()
+                  )
+                  ->join(
+                    array('s' => 's_core_shops'),
+                    "$sCategoryId = SUBSTRING_INDEX(TRIM($pipe FROM $cPath), $pipe, $quotedMinusOne)
+                    AND $sId IN ($quotedShopIds)",
+                    array()
+                  )
+                  ->group('ac.articleID');
+
+        // translations as serialized PHP objects
+        foreach ($localeShops as $localeId) {
+            $tableKey1 = 'ta_' . $localeId;
+            $tableKey2 = 'td_' . $localeId;
+            $quotedTableKey1 = $this->qi($tableKey1);
+            $quotedTableKey2 = $this->qi($tableKey2);
+            $quotedLanguage = $db->quote($localeId);
+            $sql->joinLeft(
+                    array($tableKey1 => 's_core_translations'),
+                    "$quotedTableKey1.$fieldObjectKey = $acArticleId AND
+                    $quotedTableKey1.$fieldObjectType = $article AND
+                    $quotedTableKey1.$fieldObjectLanguage = $quotedLanguage",
+                    array('article_translation_' . $locale => 'objectdata')
+                )
+                ->joinLeft(
+                    array($tableKey2 => 's_core_translations'),
+                    "$quotedTableKey2.$fieldObjectKey = $dId AND
+                    $quotedTableKey2.$fieldObjectType = $variant AND
+                    $quotedTableKey2.$fieldObjectLanguage = $quotedLanguage",
+                    array('detail_translation_' . $locale => 'objectdata')
+                );
+        }
+        $stmt = $db->query($sql);
+
+        // prepare file & stream results into it
+        $file_name = $this->dirPath . self::ITEM_TRANSLATIONS_CSV;
+        $this->openFile($file_name);
+
+        $headers = array('item_id');
+        $locales = $this->getShopLocales($id);
+        foreach($locales as $locale) {
+            $headers[] = 'name_' . $locale;
+            $headers[] = 'description_' . $locale;
+            $headers[] = 'additionaltext_' . $locale;
+        }
+        $this->addRowToFile($headers);
+
+        while ($row = $stmt->fetch()) {
+            $translation = array('item_id' => $row['id']);
+
+            foreach ($locales as $locale) {
+                foreach ($this->translationFields as $key) {
+                    $row[$key . '_' . $locale] = '';
+                }
+
+                if (!empty($row['article_translation_' . $locale])) {
+                    $objectdata = unserialize($row['article_translation_' . $locale]);
+                } elseif (!empty($row['detail_translation_' . $locale])) {
+                    $objectdata = unserialize($row['detail_translation_' . $locale]);
+                }
+
+                if (!empty($objectdata)) {
+                    foreach ($objectdata as $key => $value) {
+                        if (array_key_exists($key, $this->translationFields) && strlen($value)) {
+                            $row[$this->translationFields[$key] . '_' . $locale] = $value;
+                        }
+                    }
+                }
+            }
+
+            foreach ($locales as $locale) {
+                $translation['name_' . $locale] = $row['name_' . $locale];
+                $translation['description_' . $locale] = trim(
+                    $row['description_' . $locale] . PHP_EOL . PHP_EOL .
+                    $row['description_long_' . $locale]
+                );
+                $translation['additionaltext_' . $locale] = $row['additionaltext_' . $locale];
+            }
+
+            $this->addRowToFile($translation);
+        }
+        $this->closeFile();
+
+        return $file_name;
+    }
+
+    /**
+     * @param int $id
+     * @return string
+     */
     protected function getCustomers($id) {
-        $headers = array('id', 'customer_id', 'public_id', 'country', 'zip', 'dob', 'gender');
+        $this->log->debug("start collecting customers for shop id $id");
+        $headers = array('id', 'customer_id', 'public_id', 'country', 'zip', 'dob', 'gender', 'language');
         $should_export_email = $this->getConfigurationByShopId($id, 'email');
         if ($should_export_email) {
             $headers[] = 'email';
@@ -1040,6 +1195,7 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
      * @return string
      */
     protected function getTransactions($id) {
+        $this->log->debug("start collecting transactions for shop id $id");
         // prepare XML configuration
         $containers = $this->xml->xpath('//containers');
         $containers = $containers[0];
@@ -1166,10 +1322,9 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
 
     /**
      * @param array $row
-     * @param array $locales
      * @return array
      */
-    protected function prepareArticleRow($row, $locales)
+    protected function prepareArticleRow($row)
     {
         if (empty($row['configuratorsetID'])) {
             $row['mainnumber'] = '';
@@ -1187,36 +1342,6 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
                 }
             }
             $row['categorypaths'] = implode("\r\n", $categorypaths);
-        }
-
-        if (!empty($locales)) {
-            foreach ($locales as $locale) {
-                if (!empty($row['article_translation_' . $locale])) {
-                    $objectdata = unserialize($row['article_translation_' . $locale]);
-                } elseif (!empty($row['detail_translation_' . $locale])) {
-                    $objectdata = unserialize($row['detail_translation_' . $locale]);
-                } else {
-                    continue;
-                }
-
-                if (!empty($objectdata)) {
-                    foreach ($objectdata as $key => $value) {
-                        if (array_key_exists($key, $this->translationFields) && strlen($value)) {
-                            $row[$this->translationFields[$key] . '_' . $locale] = $value;
-                        }
-                    }
-                }
-            }
-
-            foreach ($locales as $locale) {
-                $row['description_' . $locale] = trim(
-                    $row['description_' . $locale] . PHP_EOL .
-                    $row['description_long_' . $locale]
-                );
-                unset($row['description_long_' . $locale]);
-                unset($row['article_translation_' . $locale]);
-                unset($row['detail_translation_' . $locale]);
-            }
         }
 
         return $row;
