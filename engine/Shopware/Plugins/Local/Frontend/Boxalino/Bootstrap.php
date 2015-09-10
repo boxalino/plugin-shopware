@@ -150,7 +150,7 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
         $db->query(
             'CREATE TABLE IF NOT EXISTS ' . $db->quoteIdentifier('exports') .
             ' ( ' . $db->quoteIdentifier('export_date') . ' DATETIME)'
-		);
+        );
     }
 
     private function removeDatabase()
@@ -172,6 +172,9 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
         $this->subscribeEvent('Enlight_Controller_Dispatcher_ControllerPath_Backend_BoxalinoExport', 'boxalinoBackendControllerExport');
 
         $this->subscribeEvent('Enlight_Controller_Action_PostDispatch_Backend_Customer', 'onBackendCustomerPostDispatch');
+
+        $this->subscribeEvent('Shopware_Modules_Basket_AddArticle_FilterSql', 'onAddToBasket');
+        $this->subscribeEvent('Shopware_Modules_Order_SaveOrder_ProcessDetails', 'onPurchase');
     }
 
     public function boxalinoBackendControllerExport()
@@ -191,8 +194,19 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
         return $this->searchInterceptor->ajaxSearch($arguments);
     }
 
-    public function onFrontend(Enlight_Event_EventArgs $arguments) {
-        $this->frontendInterceptor->intercept($arguments);
+    public function onFrontend(Enlight_Event_EventArgs $arguments)
+    {
+        return $this->frontendInterceptor->intercept($arguments);
+    }
+
+    public function onAddToBasket(Enlight_Event_EventArgs $arguments)
+    {
+        return $this->frontendInterceptor->addToBasket($arguments);
+    }
+
+    public function onPurchase(Enlight_Event_EventArgs $arguments)
+    {
+        return $this->frontendInterceptor->purchase($arguments);
     }
 
     public function createConfiguration()

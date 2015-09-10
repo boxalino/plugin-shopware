@@ -19,7 +19,7 @@ class Shopware_Plugins_Frontend_Boxalino_EventReporter
     );
     private static function buildScript($pushes = null)
     {
-        $account = Shopware()->Config()->get('boxalino_account');
+        $account = Shopware_Plugins_Frontend_Boxalino_P13NHelper::getAccount();
         return <<<SCRIPT
             <script type="text/javascript">
                 var _bxq = _bxq || [];
@@ -79,10 +79,16 @@ SCRIPT;
 
     public static function reportAddToBasket($product, $count, $price, $currency)
     {
-        $script = <<<SCRIPT
-                _bxq.push(['trackAddToBasket', '$product ', '$count', '$price', '$currency']);
-SCRIPT;
-        return self::buildScript($script);
+        $event = new Shopware_Plugins_Frontend_Boxalino_Event(
+            'addToBasket',
+            array(
+                'id' => $product,
+                'q'  => $count,
+                'p'  => $price,
+                'c'  => $currency,
+            )
+        );
+        return $event->track();
     }
 
     /**
@@ -94,23 +100,27 @@ SCRIPT;
      *          )
      *      </code>
      * @param $orderId string
-     * @param $price number
+     * @param $totalPrice number
      * @param $currency string
      */
-    public static function reportPurchase($products, $orderId, $price, $currency)
+    public static function reportPurchase($products, $orderId, $totalPrice, $currency)
     {
-        $productsJson = json_encode($products);
-        $script = <<<SCRIPT
-                _bxq.push([
-                    'trackPurchase',
-                    '$price;,
-                    '$currency',
-                    $productsJson,
-                    '$orderId'
-                 ]);
+        $productsCount = count($products);
+        $params = array(
+            't'  => $totalPrice,
+            'c'  => $currency,
+            'n'  => $productsCount,
+        );
+        for ($i = 0; $i < $productsCount; ++$i) {
+            $params['id' . $i] = $products[$i]['product'];
+            $params['q' . $i] = $products[$i]['quantity'];
+            $params['p' . $i] = $products[$i]['price'];
+        }
 
-SCRIPT;
-        return self::buildScript($script);
+        $event = new Shopware_Plugins_Frontend_Boxalino_Event(
+            'purchase', $params
+        );
+        return $event->track();
     }
 
     private static function prepareFilters($params)
@@ -190,4 +200,4 @@ SCRIPT;
     private static function returnfilterValue($paramName, $paramValue)
     {
     }
-} 
+}

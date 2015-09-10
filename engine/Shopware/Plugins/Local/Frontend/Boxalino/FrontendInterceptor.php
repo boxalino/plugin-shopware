@@ -6,6 +6,11 @@
 class Shopware_Plugins_Frontend_Boxalino_FrontendInterceptor
     extends Shopware_Plugins_Frontend_Boxalino_Interceptor
 {
+    /**
+     * add tracking
+     * @param Enlight_Event_EventArgs $arguments
+     * @return boolean
+     */
     public function intercept(Enlight_Event_EventArgs $arguments)
     {
         $this->init($arguments);
@@ -53,7 +58,64 @@ class Shopware_Plugins_Frontend_Boxalino_FrontendInterceptor
                     $script = Shopware_Plugins_Frontend_Boxalino_EventReporter::reportPageView();
                 }
         }
+        $this->addScript($script);
+        return false;
+    }
 
+    /**
+     * add "add to basket" tracking
+     * @param Enlight_Event_EventArgs $arguments
+     * @return boolean
+     */
+    public function addToBasket(Enlight_Event_EventArgs $arguments)
+    {
+        if ($this->Config()->get('boxalino_tracking_enabled')) {
+            $article = $arguments->getArticle();
+            $price = $arguments->getPrice();
+            Shopware_Plugins_Frontend_Boxalino_EventReporter::reportAddToBasket(
+                $article['articledetailsID'],
+                $arguments->getQuantity(),
+                $price['price'],
+                Shopware()->Shop()->getCurrency()
+            );
+        }
+        return $arguments->getReturn();
+    }
+
+    /**
+     * add purchase tracking
+     * @param Enlight_Event_EventArgs $arguments
+     * @return boolean
+     */
+    public function purchase(Enlight_Event_EventArgs $arguments)
+    {
+        if ($this->Config()->get('boxalino_tracking_enabled')) {
+            $products = array();
+            foreach ($arguments->getDetails() as $detail) {
+                $products[] = array(
+                    'product' => $detail['articleDetailId'],
+                    'quantity' => $detail['quantity'],
+                    'price' => $detail['priceNumeric'],
+                );
+            }
+            Shopware_Plugins_Frontend_Boxalino_EventReporter::reportPurchase(
+                $products,
+                $arguments->getSubject()->sOrderNumber,
+                $arguments->getSubject()->sAmount,
+                Shopware()->Shop()->getCurrency()
+            );
+        }
+        return $arguments->getReturn();
+    }
+
+    /**
+     * add script if tracking enabled
+     * @param string $script
+     * @return void
+     */
+    protected function addScript($script)
+    {
+        Shopware()->PluginLogger()->debug("addScript: $script");
         if ($script != null && $this->Config()->get('boxalino_tracking_enabled')) {
             $this->View()->addTemplateDir($this->Bootstrap()->Path() . 'Views/');
             $this->View()->extendsTemplate('frontend/index.tpl');
