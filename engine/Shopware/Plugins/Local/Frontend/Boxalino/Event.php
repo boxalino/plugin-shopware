@@ -21,11 +21,11 @@ class Shopware_Plugins_Frontend_Boxalino_Event
         }
         $cems = Shopware()->Front()->Request()->getCookie('cems');
         $cemv = Shopware()->Front()->Request()->getCookie('cemv');
-        if(!array_key_exists('_bxv', $params)) {
-            $params['_bxv'] = empty($cems) ? self::getSessionId() : $cems;
-        }
         if(!array_key_exists('_bxs', $params)) {
-            $params['_bxs'] = empty($cemv) ? self::getSessionId() : $cemv;
+            $params['_bxs'] = empty($cems) ? self::getSessionId() : $cems;
+        }
+        if(!array_key_exists('_bxv', $params)) {
+            $params['_bxv'] = empty($cemv) ? self::getSessionId() : $cemv;
         }
         if(array_key_exists('referer', $params)) {
             $this->referer = $params['referer'];
