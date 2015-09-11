@@ -54,7 +54,7 @@ class Shopware_Plugins_Frontend_Boxalino_FrontendInterceptor
             default:
                 $param = $this->Request()->getParam('callback');
                 // skip ajax calls
-                if (empty($param)) {
+                if (empty($param) && strpos($this->Request()->getPathInfo(), 'ajax') === false) {
                     $script = Shopware_Plugins_Frontend_Boxalino_EventReporter::reportPageView();
                 }
         }

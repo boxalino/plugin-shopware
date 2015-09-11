@@ -257,8 +257,12 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
             'source' => self::ITEM_PROPERTIES,
             'fields' => array(
                 'item_id' => array('type' => 'id'),
-                'product_id' => array('column' => 'item_id'),
-                'group_id',
+                'product_id' => array('column' => 'item_id', 'params' => array(
+                    'fieldParameter' => array('name' => 'multiValued', 'value' => 'false')
+                )),
+                'group_id' => array('params' => array(
+                    'fieldParameter' => array('name' => 'multiValued', 'value' => 'false')
+                )),
                 'ordernumber',
                 'mainnumber' => array('name' => 'asd'),
                 'name' => array('type'=>'title'),

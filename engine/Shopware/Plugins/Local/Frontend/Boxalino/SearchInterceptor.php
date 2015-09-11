@@ -46,24 +46,35 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
 
         Enlight()->Plugins()->Controller()->Json()->setPadding();
 
-        $this->View()->loadTemplate('frontend/search/ajax.tpl');
-
         $term = $this->getSearchTerm();
         if (empty($term) || strlen($term) < $this->Config()->MinSearchLenght) {
             return false;
         }
 
-        $results = $this->Helper()->extractResults(
-            $this->Helper()->quickSearch($term)
-        );
-        $sResults = $this->prepareResults($results);
+        $response = $this->Helper()->autocomplete($term, 0, $this->Helper()->getSearchLimit());
+        $suggestions = $this->Helper()->getAutocompleteSuggestions($response);
 
-        $this->View()->sSearchRequest = array('sSearch' => $term);
-        $this->View()->sSearchResults = array(
-            'sResults' => $sResults,
-            'sArticlesCount' => $results['count'],
+        $sResults = $this->get('legacy_struct_converter')->convertListProductStructList(
+            $this->get('shopware_storefront.list_product_service')->getList(
+                $this->Helper()->getAutocompletePreviewsearch($response),
+                $this->get('shopware_storefront.context_service')->getProductContext()
+            )
         );
+        foreach ($sResults as $key => $result) {
+            $sResults[$key]['name'] = $result['articleName'];
+        }
 
+        $this->View()->loadTemplate('frontend/search/ajax.tpl');
+        $this->View()->addTemplateDir($this->Bootstrap()->Path() . 'Views/');
+        $this->View()->extendsTemplate('frontend/ajax.tpl');
+        $this->View()->assign(array(
+            'sSearchRequest' => array('sSearch' => $term),
+            'sSearchResults' => array(
+                'sResults' => $sResults,
+                'sArticlesCount' => $results['count'],
+                'sSuggestions' => $suggestions,
+            ),
+        ));
         return false;
     }
 
@@ -86,8 +97,6 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
         if (!empty($location)) {
             return $this->Controller()->redirect($location);
         }
-
-        $this->View()->loadTemplate('frontend/search/fuzzy.tpl');
 
         // Check if search term met minimum length
         if (strlen($term) >= (int) $this->Config()->sMINSEARCHLENGHT) {
@@ -121,6 +130,9 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
             $params['sSearchOrginal'] = $term;
 
             // Assign result to template
+            $this->View()->loadTemplate('frontend/search/fuzzy.tpl');
+            $this->View()->addTemplateDir($this->Bootstrap()->Path() . 'Views/');
+            $this->View()->extendsTemplate('frontend/relaxation.tpl');
             $this->View()->assign(array(
                 'term' => $term,
                 'criteria' => $criteria,

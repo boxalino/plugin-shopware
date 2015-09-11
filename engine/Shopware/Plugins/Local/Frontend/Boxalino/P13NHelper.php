@@ -36,7 +36,7 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
         return $shortLocale;
     }
 
-    private function getSearchLimit() {
+    public function getSearchLimit() {
         return Shopware()->Config()->get('maxlivesearchresults', 6);
     }
 
@@ -50,11 +50,6 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
 
     private function isDebug() {
         return $this->Request()->getQuery('dev_bx_disp', false) == 'true';
-    }
-
-    public function quickSearch($text)
-    {
-        return $this->search($text, 0, $this->getSearchLimit());
     }
 
     public function search($text, $p13nOffset, $p13nHitCount, $options = array())
@@ -73,8 +68,8 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
             'id',
             'title',
             'body',
-            'mainnumber',
             'name',
+            'products_group_id',
             'net_price',
             'standardPrice',
             'products_mediaId',
@@ -105,6 +100,7 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
         $searchQuery->offset = $p13nOffset;
         $searchQuery->hitCount = $p13nHitCount;
         $searchQuery->queryText = $p13nSearch;
+        $searchQuery->groupBy = 'products_group_id';
 
         if (!empty($options)) {
             $searchQuery->facetRequests = [];
@@ -181,7 +177,7 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
 
     public function autocomplete($text, $p13nOffset, $p13nHitCount)
     {
-       $p13nChoiceId = Shopware()->Config()->get('boxalino_autocomplete_widget_name');
+        $p13nChoiceId = Shopware()->Config()->get('boxalino_autocomplete_widget_name');
         // $p13nChoiceId = 'autocomplete';
         $p13nHost = Shopware()->Config()->get('boxalino_host');
         //$p13nAccount = Shopware()->Config()->get('boxalino_account');
@@ -192,13 +188,7 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
 
         $p13nSearch = $text;
         $p13nLanguage = $this->getShortLocale();
-        $p13nFields = array('id', 'title', 'body', 'mainnumber', 'name', 'net_price', 'standardPrice',
-            'products_mediaId',
-            'products_supplier',
-            'products_net_price',
-            'products_tax',
-            'products_group_id'
-        );
+        $p13nFields = array('products_ordernumber');
 
 
 // Create basic P13n client
@@ -207,7 +197,8 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
         $p13n->setAuthorization($p13nUsername, $p13nPassword);
 
 // Create main choice request object
-        $autocompleteRequest = $p13n->getAutocompleteRequest($p13nAccount, $cookieDomain);
+        $choiceRequest = $p13n->getChoiceRequest($p13nAccount, $cookieDomain);
+        $autocompleteRequest = new \com\boxalino\p13n\api\thrift\AutocompleteRequest();
 
 // Setup a search query
         $searchQuery = new \com\boxalino\p13n\api\thrift\SimpleSearchQuery();
@@ -217,14 +208,24 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
         $searchQuery->offset = $p13nOffset;
         $searchQuery->hitCount = $p13nHitCount;
         $searchQuery->queryText = $p13nSearch;
+        $searchQuery->groupBy = 'products_group_id';
 
         $autocompleteQuery = new \com\boxalino\p13n\api\thrift\AutocompleteQuery();
         $autocompleteQuery->indexId = $p13nAccount;
         $autocompleteQuery->language = $this->getShortLocale();
         $autocompleteQuery->queryText = $p13nSearch;
+        $autocompleteQuery->highlight = true;
+        $autocompleteQuery->highlightPre = '<em>';
+        $autocompleteQuery->highlightPost = '</em>';
 
 // Add inquiry to choice request
+        $cemv = Shopware()->Front()->Request()->getCookie('cemv');
+        if(empty($cemv)) {
+            $cemv = self::getSessionId();
+        }
+        $autocompleteRequest->userRecord = $choiceRequest->userRecord;
         $autocompleteRequest->choiceId = $p13nChoiceId;
+        $autocompleteRequest->profileId = $cemv;
         $autocompleteRequest->autocompleteQuery = $autocompleteQuery;
         $autocompleteRequest->searchChoiceId = $p13nChoiceId;
         $autocompleteRequest->searchQuery = $searchQuery;
@@ -241,6 +242,28 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
             throw $e;
         }
         return $choiceResponse;
+    }
+
+    public function getAutocompleteSuggestions(\com\boxalino\p13n\api\thrift\AutocompleteResponse $response)
+    {
+        $suggestions = array();
+        foreach ($response->hits as $hit) {
+            $suggestions[] = array(
+                'text' => $hit->suggestion,
+                'html' => (strlen($hit->highlighted) ? $hit->highlighted : $hit->suggestion),
+                'hits' => $hit->searchResult->totalHitCount,
+            );
+        }
+        return $suggestions;
+    }
+
+    public function getAutocompletePreviewsearch(\com\boxalino\p13n\api\thrift\AutocompleteResponse $response)
+    {
+        $results = array();
+        foreach ($this->extractResultsFromHitGroups($response->prefixSearchResult->hitsGroups) as $result) {
+            $results[] = $result['products_ordernumber'];
+        }
+        return $results;
     }
 
     public function findRawRecommendations($id, $role, $p13nChoiceId, $count = 5, $fieldName = 'products_group_id')
@@ -273,6 +296,7 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
         $searchQuery->returnFields = $p13nFields;
         $searchQuery->offset = 0;
         $searchQuery->hitCount = $count;
+        $searchQuery->groupBy = 'products_group_id';
 
         // Connect search query to the inquiry
         $inquiry->simpleSearchQuery = $searchQuery;
@@ -315,7 +339,17 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
             /** @var \com\boxalino\p13n\api\thrift\SearchResult $searchResult */
             $searchResult = $variant->searchResult;
             $count += $searchResult->totalHitCount;
-            foreach ($searchResult->hits as $item) {
+            $this->extractResultsFromHitGroups($searchResult->hitsGroups, $results);
+        }
+        return array('results' => $results, 'count' => $count);
+    }
+
+    public function extractResultsFromHitGroups($hitsGroups, &$results = array())
+    {
+        /** @var \com\boxalino\p13n\api\thrift\HitsGroup $group */
+        foreach ($hitsGroups as $group) {
+            /** @var \com\boxalino\p13n\api\thrift\Hit $item */
+            foreach ($group->hits as $item) {
                 $result = array();
                 foreach ($item->values as $key => $value) {
                     if (is_array($value) && count($value) == 1) {
@@ -329,9 +363,8 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
                 $results[] = $result;
             }
         }
-        return array('results' => $results, 'count' => $count);
+        return $results;
     }
-
 
     /**
      * @param $choiceResponse

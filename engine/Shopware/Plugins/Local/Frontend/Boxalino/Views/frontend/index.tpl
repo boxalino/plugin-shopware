@@ -1,1 +1,1 @@
-{block name="frontend_index_before_page"}{$report_script}{/block}
+{block name="frontend_index_before_page" append}{$report_script}{/block}
