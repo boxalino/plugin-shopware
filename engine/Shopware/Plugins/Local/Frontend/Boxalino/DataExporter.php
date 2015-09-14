@@ -147,7 +147,7 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
         }
         $zip->addFile($this->getCustomers($id), self::CUSTOMERS_CSV);
         $zip->addFile($this->getTransactions($id), self::TRANSACTIONS_CSV);
-        $zip->addFromString('properties.xml', $this->finishAndGetXml());
+        $zip->addFromString('properties.xml', $this->finishAndGetXml($id));
         $zip->close();
 
         $dom = new DOMDocument('1.0');
@@ -742,15 +742,15 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
         $logic = $transform->addChild('logic');
         $logic->addAttribute('source', self::ITEM_BRANDS);
         $logic->addAttribute('type', 'direct');
-        foreach($this->getLocales() as $l) {
+        $locales = $this->getShopLocales($id);
+        foreach($locales as $locale) {
             $field = $logic->addChild('field');
-            $field->addAttribute('language', $l['locale']);
-            $field->addAttribute('column', 'brand_'.$l['locale']);
+            $field->addAttribute('language', $locale);
+            $field->addAttribute('column', 'brand_' . $locale);
         }
         $property->addChild('params');
 
         // prepare query
-        $locales = $this->getShopLocales($id);
         $db = $this->db;
 
         $sql = $db->select()
@@ -1563,9 +1563,10 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
     /**
      * write settings into configuration XML and return it
      *
+     * @param int $id
      * @return string
      */
-    protected function finishAndGetXml()
+    protected function finishAndGetXml($id)
     {
         $properties = $this->xml->xpath('//properties');
         $properties = $properties[0];
@@ -1599,7 +1600,7 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
                 $logic->addAttribute('source', $data['source']);
                 $logic->addAttribute('type', $fieldDesc['logical_type']);
                 if (in_array($fieldDesc['type'], array('title', 'body', 'text'))) {
-                    foreach ($this->getLocales() as $lang) {
+                    foreach ($this->getShopLocales($id) as $lang) {
                         $field = $logic->addChild('field');
                         $field->addAttribute('language', $lang['locale']);
                         $field->addAttribute('column', $fieldDesc['column'] . '_' . $lang['locale']);
