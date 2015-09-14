@@ -888,31 +888,6 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
 
         $db = $this->db;
 
-        // build category tree for current language
-        $tree = array();
-        $parents = array();
-        $sql = $db->select()
-                  ->from('s_categories', array('id', 'parent', 'description', 'path'))
-                  ->where($this->qi('path') . ' IS NOT NULL');
-        $results = $db->fetchAll($sql);
-        foreach ($db->fetchAll($sql) as $r) {
-            $tree[$r['id']] = $r;
-        }
-        foreach($tree as $r) {
-            if ($r['path'] != null) {
-                $split = explode('|', $r['path']);
-                if (!isset($parents[$r['id']])) {
-                    $parents[$r['id']] = array();
-                }
-                foreach($split as $id) {
-                    if (!empty($id) && isset($tree[$id])) {
-                        $parents[$r['id']][] = $id;
-                    }
-                }
-            }
-        }
-
-
         // get category per item
         $sql = $db->select()
                   ->from(array('ac' => 's_articles_categories'), array('categoryID'))
@@ -928,21 +903,15 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
                     $this->getShopCategoryIds($id),
                     array()
                   );
-        $itemCategoryMap = array();
-        foreach ($db->fetchAll($sql) as $a) {
-            $itemCategoryMap[$a['id'] . '_' . $a['categoryID']] = array($a['id'], $a['categoryID']);
-            foreach($parents[$a['categoryID']] as $p) {
-                $itemCategoryMap[$a['id'] . '_' . $p] = array($a['id'], $p);
-            }
-        }
+        $stmt = $db->query($sql);
 
         // prepare file & stream results into it
         $file_name = $this->dirPath . self::ITEM_CATEGORIES_CSV;
         $this->openFile($file_name);
         $this->addRowToFile(array('item_id', 'cat_id'));
 
-        foreach ($itemCategoryMap as $row) {
-            $this->addRowToFile($row);
+        while ($row = $stmt->fetch()) {
+            $this->addRowToFile(array($row['id'], $row['categoryID']));
         }
         $this->closeFile();
 
