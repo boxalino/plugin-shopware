@@ -11,8 +11,13 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
      */
     private $request;
 
+    private $config;
+
+    private $relaxationEnabled = false;
+
     private function __construct()
     {
+        $this->config = Shopware()->Config();
     }
 
     /**
@@ -24,42 +29,14 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
         return self::$instance;
     }
 
-    /**
-     * @return string
-     */
-    private function getShortLocale() {
-        $locale = Shopware()->Shop()->getLocale();
-        $shortLocale = $locale->getLocale();
-        $position = strpos($shortLocale, '_');
-        if ($position !== false)
-            $shortLocale = substr($shortLocale, 0, $position);
-        return $shortLocale;
-    }
-
-    public function getSearchLimit() {
-        return Shopware()->Config()->get('maxlivesearchresults', 6);
-    }
-
-    private function debug($request, $response = null) {
-        if ($this->isDebug()) {
-            echo '<pre>';
-            var_dump($request, $response);
-            echo '</pre>';
-        }
-    }
-
-    private function isDebug() {
-        return $this->Request()->getQuery('dev_bx_disp', false) == 'true';
-    }
-
     public function search($text, $p13nOffset, $p13nHitCount, $options = array())
     {
-        $p13nChoiceId = Shopware()->Config()->get('boxalino_search_widget_name');
-        $p13nHost = Shopware()->Config()->get('boxalino_host');
+        $p13nChoiceId = $this->config->get('boxalino_search_widget_name');
+        $p13nHost = $this->config->get('boxalino_host');
         $p13nAccount = $this->getAccount();
-        $p13nUsername = Shopware()->Config()->get('boxalino_username');
-        $p13nPassword = Shopware()->Config()->get('boxalino_password');
-        $cookieDomain = Shopware()->Config()->get('boxalino_domain');
+        $p13nUsername = $this->config->get('boxalino_username');
+        $p13nPassword = $this->config->get('boxalino_password');
+        $cookieDomain = $this->config->get('boxalino_domain');
 
         $p13nSearch = $text;
         $p13nLanguage = $this->getShortLocale();
@@ -91,6 +68,17 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
         // Setup main choice inquiry object
         $inquiry = new \com\boxalino\p13n\api\thrift\ChoiceInquiry();
         $inquiry->choiceId = $p13nChoiceId;
+
+        // enable relaxation
+        if (
+            ($this->config->get('boxalino_search_suggestions_amount') > 0 &&
+            ($this->config->get('boxalino_search_suggestions_minimum') > 0 ||
+            $this->config->get('boxalino_search_suggestions_maximum') > 0)) ||
+            ($this->config->get('boxalino_search_subphrase_amount') > 0 &&
+            $this->config->get('boxalino_search_subphrase_minimum') > 0)
+        ) {
+            $inquiry->withRelaxation = $this->relaxationEnabled = true;
+        }
 
         // Setup a search query
         $searchQuery = new \com\boxalino\p13n\api\thrift\SimpleSearchQuery();
@@ -177,14 +165,14 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
 
     public function autocomplete($text, $p13nOffset, $p13nHitCount)
     {
-        $p13nChoiceId = Shopware()->Config()->get('boxalino_autocomplete_widget_name');
+        $p13nChoiceId = $this->config->get('boxalino_autocomplete_widget_name');
         // $p13nChoiceId = 'autocomplete';
-        $p13nHost = Shopware()->Config()->get('boxalino_host');
-        //$p13nAccount = Shopware()->Config()->get('boxalino_account');
+        $p13nHost = $this->config->get('boxalino_host');
+        //$p13nAccount = $this->config->get('boxalino_account');
         $p13nAccount = $this->getAccount();
-        $p13nUsername = Shopware()->Config()->get('boxalino_username');
-        $p13nPassword = Shopware()->Config()->get('boxalino_password');
-        $cookieDomain = Shopware()->Config()->get('boxalino_domain');
+        $p13nUsername = $this->config->get('boxalino_username');
+        $p13nPassword = $this->config->get('boxalino_password');
+        $cookieDomain = $this->config->get('boxalino_domain');
 
         $p13nSearch = $text;
         $p13nLanguage = $this->getShortLocale();
@@ -244,35 +232,13 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
         return $choiceResponse;
     }
 
-    public function getAutocompleteSuggestions(\com\boxalino\p13n\api\thrift\AutocompleteResponse $response)
-    {
-        $suggestions = array();
-        foreach ($response->hits as $hit) {
-            $suggestions[] = array(
-                'text' => $hit->suggestion,
-                'html' => (strlen($hit->highlighted) ? $hit->highlighted : $hit->suggestion),
-                'hits' => $hit->searchResult->totalHitCount,
-            );
-        }
-        return $suggestions;
-    }
-
-    public function getAutocompletePreviewsearch(\com\boxalino\p13n\api\thrift\AutocompleteResponse $response)
-    {
-        $results = array();
-        foreach ($this->extractResultsFromHitGroups($response->prefixSearchResult->hitsGroups) as $result) {
-            $results[] = $result['products_ordernumber'];
-        }
-        return $results;
-    }
-
     public function findRawRecommendations($id, $role, $p13nChoiceId, $count = 5, $fieldName = 'products_group_id')
     {
-        $p13nHost = Shopware()->Config()->get('boxalino_host');
+        $p13nHost = $this->config->get('boxalino_host');
         $p13nAccount = $this->getAccount();
-        $p13nUsername = Shopware()->Config()->get('boxalino_username');
-        $p13nPassword = Shopware()->Config()->get('boxalino_password');
-        $cookieDomain = Shopware()->Config()->get('boxalino_domain');
+        $p13nUsername = $this->config->get('boxalino_username');
+        $p13nPassword = $this->config->get('boxalino_password');
+        $cookieDomain = $this->config->get('boxalino_domain');
 
         $p13nLanguage = $this->getShortLocale();
         $p13nFields = array('id', 'products_group_id');
@@ -397,6 +363,70 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
         return $articles;
     }
 
+    public function getRelaxationSuggestions(\com\boxalino\p13n\api\thrift\ChoiceResponse $response)
+    {
+        $suggestions = array();
+        if ($this->relaxationEnabled) {
+            /** @var \com\boxalino\p13n\api\thrift\Variant $variant */
+            foreach ($response->variants as $variant) {
+                if (is_object($variant->searchRelaxation)) {
+                    /** @var \com\boxalino\p13n\api\thrift\SearchResult $searchResult */
+                    foreach ($variant->searchRelaxation->suggestionsResults as $searchResult) {
+                        $suggestions[] = array(
+                            'text' => $searchResult->queryText,
+                            'count' => $searchResult->totalHitCount,
+                            'results' => $this->extractResultsFromHitGroups($searchResult->hitsGroups),
+                        );
+                    }
+                }
+            }
+        }
+        return $suggestions;
+    }
+
+    public function getRelaxationSubphraseResults(\com\boxalino\p13n\api\thrift\ChoiceResponse $response)
+    {
+        $subphrases = array();
+        if ($this->relaxationEnabled) {
+            /** @var \com\boxalino\p13n\api\thrift\Variant $variant */
+            foreach ($response->variants as $variant) {
+                if (is_object($variant->searchRelaxation)) {
+                    /** @var \com\boxalino\p13n\api\thrift\SearchResult $searchResult */
+                    foreach ($variant->searchRelaxation->subphrasesResults as $searchResult) {
+                        $subphrases[] = array(
+                            'text' => $searchResult->queryText,
+                            'count' => $searchResult->totalHitCount,
+                            'results' => $this->extractResultsFromHitGroups($searchResult->hitsGroups),
+                        );
+                    }
+                }
+            }
+        }
+        return $subphrases;
+    }
+
+    public function getAutocompleteSuggestions(\com\boxalino\p13n\api\thrift\AutocompleteResponse $response)
+    {
+        $suggestions = array();
+        foreach ($response->hits as $hit) {
+            $suggestions[] = array(
+                'text' => $hit->suggestion,
+                'html' => (strlen($hit->highlighted) ? $hit->highlighted : $hit->suggestion),
+                'hits' => $hit->searchResult->totalHitCount,
+            );
+        }
+        return $suggestions;
+    }
+
+    public function getAutocompletePreviewsearch(\com\boxalino\p13n\api\thrift\AutocompleteResponse $response)
+    {
+        $results = array();
+        foreach ($this->extractResultsFromHitGroups($response->prefixSearchResult->hitsGroups) as $result) {
+            $results[] = $result['products_ordernumber'];
+        }
+        return $results;
+    }
+
     /**
      * Sets request instance
      *
@@ -417,14 +447,47 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
         return $this->request;
     }
 
-    public static function getAccount(){
+    /**
+     * @return string
+     */
+    private function getShortLocale()
+    {
+        $locale = Shopware()->Shop()->getLocale();
+        $shortLocale = $locale->getLocale();
+        $position = strpos($shortLocale, '_');
+        if ($position !== false)
+            $shortLocale = substr($shortLocale, 0, $position);
+        return $shortLocale;
+    }
 
+    public function getSearchLimit()
+    {
+        return $this->config->get('maxlivesearchresults', 6);
+    }
+
+    private function debug($request, $response = null)
+    {
+        if ($this->isDebug()) {
+            echo '<pre>';
+            var_dump($request, $response);
+            echo '</pre>';
+        }
+    }
+
+    private function isDebug()
+    {
+        return $this->Request()->getQuery('dev_bx_disp', false) == 'true';
+    }
+
+    public static function getAccount()
+    {
+        $config = Shopware()->Config();
         if(
-            Shopware()->Config()->get('boxalino_dev', 0) == 1
+            $config->get('boxalino_dev', 0) == 1
         ){
-            return Shopware()->Config()->get('boxalino_account') . '_dev';
+            return $config->get('boxalino_account') . '_dev';
         } else{
-            return Shopware()->Config()->get('boxalino_account');
+            return $config->get('boxalino_account');
         }
 
     }

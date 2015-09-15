@@ -115,7 +115,6 @@ class Shopware_Plugins_Frontend_Boxalino_FrontendInterceptor
      */
     protected function addScript($script)
     {
-        Shopware()->PluginLogger()->debug("addScript: $script");
         if ($script != null && $this->Config()->get('boxalino_tracking_enabled')) {
             $this->View()->addTemplateDir($this->Bootstrap()->Path() . 'Views/');
             $this->View()->extendsTemplate('frontend/index.tpl');

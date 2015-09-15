@@ -116,11 +116,49 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
             $pageCount = $criteria->getLimit();
             $pageOffset = $criteria->getOffset();
 
-            $choice = $this->Helper()->search(
+            $response = $this->Helper()->search(
                 $term, $pageOffset, $pageCount, $options
             );
-            $results = $this->Helper()->extractResults($choice);
-            $facets = $this->updateFacetsWithResult($facets, $choice);
+            $results = $this->Helper()->extractResults($response);
+
+            // decide if original result is shown or one of the relaxations
+            // (the one with the largest hit count)
+            $didYouMean = array();
+            if (
+                ($amount = $config->get('boxalino_search_subphrase_amount')) > 0 &&
+                $config->get('boxalino_search_subphrase_minimum') >= $results['count']
+            ) {
+                $count = $maxCount = 0;
+                $subphrases = $this->Helper()->getRelaxationSubphraseResults($response);
+                foreach ($subphrases as $subphrase) {
+                    if (++$count > $amount) break;
+                    if ($subphrase['count'] >= $results['count'] && $subphrase['count'] >= $maxCount) {
+                        $results = $subphrase;
+                        $maxCount = $results['count'];
+                    }
+                    unset($subphrase['results']);
+                    $didYouMean[] = $subphrase;
+                }
+            }
+            if (
+                ($amount = $config->get('boxalino_search_suggestions_amount')) > 0 &&
+                ($config->get('boxalino_search_suggestions_minimum') >= $results['count'] ||
+                $config->get('boxalino_search_suggestions_maximum') <= $results['count'])
+            ) {
+                $count = $maxCount = 0;
+                $suggestions = $this->Helper()->getRelaxationSuggestions($response);
+                foreach ($suggestions as $suggestion) {
+                    if (++$count > $amount) break;
+                    if ($suggestion['count'] >= $results['count'] && $suggestion['count'] >= $maxCount) {
+                        $results = $suggestion;
+                        $maxCount = $results['count'];
+                    }
+                    unset($suggestion['results']);
+                    $didYouMean[] = $suggestion;
+                }
+            }
+
+            $facets = $this->updateFacetsWithResult($facets, $response);
 
             // Get additional information for each search result
             $articles = $this->Helper()->getLocalArticles($results);
@@ -147,7 +185,8 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
                 'ajaxCountUrlParams' => ['sCategory' => $context->getShop()->getCategory()->getId()],
                 'sSearchResults' => array(
                     'sArticles' => $articles,
-                    'sArticlesCount' => ($results['count'] > 0 ? $results['count'] : 0),
+                    'sArticlesCount' => $results['count'],
+                    'sSuggestions' => $didYouMean,
                 ),
                 'productBoxLayout' => $config->get('searchProductBoxLayout'),
             ));
