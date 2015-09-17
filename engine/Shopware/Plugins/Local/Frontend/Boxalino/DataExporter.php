@@ -1602,8 +1602,8 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
                 if (in_array($fieldDesc['type'], array('title', 'body', 'text'))) {
                     foreach ($this->getShopLocales($id) as $lang) {
                         $field = $logic->addChild('field');
-                        $field->addAttribute('language', $lang['locale']);
-                        $field->addAttribute('column', $fieldDesc['column'] . '_' . $lang['locale']);
+                        $field->addAttribute('language', $lang);
+                        $field->addAttribute('column', $fieldDesc['column'] . '_' . $lang);
                     }
                 } else {
                     $field = $logic->addChild('field');

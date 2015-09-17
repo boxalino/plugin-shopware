@@ -130,7 +130,6 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor4
     /**
      * prepare category facet
      * @param $p13nCategories com\boxalino\p13n\api\thrift\FacetValue[]
-     * @throws Enlight_Exception
      * @return array
      */
     private function prepareCategories($p13nCategories)
@@ -161,14 +160,13 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor4
                 }
             }
         } catch (PDOException $e) {
-            throw new Enlight_Exception($e->getMessage());
+            Shopware()->PluginLogger()->debug('Boxalino SearchInterceptor 4: error preparing categories, PDOException: '. $e->getMessage());
         }
         return $categories;
     }
 
     /**
      * prepare category tree
-     * @throws Enlight_Exception
      */
     private function prepareCategoriesTree()
     {
@@ -188,7 +186,7 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor4
                 }
             }
         } catch (PDOException $e) {
-            throw new Enlight_Exception($e->getMessage());
+            Shopware()->PluginLogger()->debug('Boxalino SearchInterceptor 4: error preparing category tree, PDOException: '. $e->getMessage());
         }
         $this->categories = $tree;
     }

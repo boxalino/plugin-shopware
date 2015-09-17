@@ -40,7 +40,7 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
     public function ajaxSearch(Enlight_Event_EventArgs $arguments)
     {
         if (!$this->Config()->get('boxalino_search_enabled')) {
-            return false;
+            return null;
         }
         $this->init($arguments);
 
@@ -60,8 +60,14 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
                 $this->get('shopware_storefront.context_service')->getProductContext()
             )
         );
+        $router = Shopware()->Bootstrap()->getResource('Front')->Router();
         foreach ($sResults as $key => $result) {
             $sResults[$key]['name'] = $result['articleName'];
+            $sResults[$key]['link'] = $router->assemble(array(
+                'controller' => 'detail',
+                'sArticle' => $result['articleID'],
+                'title' => $result['articleName']
+            ));
         }
 
         $this->View()->loadTemplate('frontend/search/ajax.tpl');
@@ -86,7 +92,7 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
     public function search(Enlight_Event_EventArgs $arguments)
     {
         if (!$this->Config()->get('boxalino_search_enabled')) {
-            return false;
+            return null;
         }
         $this->init($arguments);
 
@@ -305,7 +311,8 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
             }
         }
 
-        throw new \Exception(sprintf('Facet %s not supported', get_class($facet)));
+        Shopware()->PluginLogger()->debug('Boxalino Search: Facet ' . get_class($facet) . ' not supported');
+        return null;
     }
 
     /**
@@ -320,6 +327,7 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
 
         foreach ($criteria->getFacets() as $facet) {
             $handler = $this->getFacetHandler($facet);
+            if ($handler === null) continue;
 
             $result = $handler->generateFacet($facet, $criteria, $context);
 

@@ -163,18 +163,21 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
 
     private function registerEvents()
     {
+        // search results and autocompletion results
         $this->subscribeEvent('Enlight_Controller_Action_Frontend_Search_DefaultSearch', 'onSearch');
         $this->subscribeEvent('Enlight_Controller_Action_Frontend_AjaxSearch_Index', 'onAjaxSearch');
 
+        // all frontend views to inject appropriate tracking, product and basket recommendations
         $this->subscribeEvent('Enlight_Controller_Action_PostDispatch_Frontend', 'onFrontend');
-        $this->subscribeEvent('Enlight_Controller_Action_PostDispatch_Widgets', 'onWidget');
+        $this->subscribeEvent('Enlight_Controller_Action_Frontend_Checkout_Cart', 'onBasket');
 
-        $this->subscribeEvent('Enlight_Controller_Dispatcher_ControllerPath_Backend_BoxalinoExport', 'boxalinoBackendControllerExport');
-
-        $this->subscribeEvent('Enlight_Controller_Action_PostDispatch_Backend_Customer', 'onBackendCustomerPostDispatch');
-
+        // add to basket and purchase tracking
         $this->subscribeEvent('Shopware_Modules_Basket_AddArticle_FilterSql', 'onAddToBasket');
         $this->subscribeEvent('Shopware_Modules_Order_SaveOrder_ProcessDetails', 'onPurchase');
+
+        // backend indexing menu and running indexer
+        $this->subscribeEvent('Enlight_Controller_Dispatcher_ControllerPath_Backend_BoxalinoExport', 'boxalinoBackendControllerExport');
+        $this->subscribeEvent('Enlight_Controller_Action_PostDispatch_Backend_Customer', 'onBackendCustomerPostDispatch');
     }
 
     public function boxalinoBackendControllerExport()
@@ -197,6 +200,11 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
     public function onFrontend(Enlight_Event_EventArgs $arguments)
     {
         return $this->frontendInterceptor->intercept($arguments);
+    }
+
+    public function onBasket(Enlight_Event_EventArgs $arguments)
+    {
+        return $this->frontendInterceptor->basket($arguments);
     }
 
     public function onAddToBasket(Enlight_Event_EventArgs $arguments)
@@ -263,6 +271,10 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
             'label' => 'Related Recommendation Choice ID',
             'value' => 'recommendation_related',
         ), array(
+            'name' => 'basket_widget_name',
+            'label' => 'Basket Recommendation Choice ID',
+            'value' => 'basket',
+        ), array(
             'type' => 'select',
             'name' => 'tracking_enabled',
             'label' => 'Tracking Enabled (default: Yes)',
@@ -271,7 +283,13 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
         ), array(
             'type' => 'select',
             'name' => 'product_recommendation_enabled',
-            'label' => 'Recommendations Enabled (default: Yes)',
+            'label' => 'Product Recommendations Enabled (default: Yes)',
+            'store' => $storeNoYes,
+            'value' => 1,
+        ), array(
+            'type' => 'select',
+            'name' => 'basket_recommendation_enabled',
+            'label' => 'Basket Recommendations Enabled (default: Yes)',
             'store' => $storeNoYes,
             'value' => 1,
         ), array(

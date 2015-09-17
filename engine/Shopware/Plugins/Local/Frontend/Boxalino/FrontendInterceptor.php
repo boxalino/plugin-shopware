@@ -6,8 +6,13 @@
 class Shopware_Plugins_Frontend_Boxalino_FrontendInterceptor
     extends Shopware_Plugins_Frontend_Boxalino_Interceptor
 {
+    private $_productRecommendations = array(
+        'sSimilarArticles' => 'boxalino_recommendation_widget_name',
+        'sRelatedArticles' => 'boxalino_recommendation_related_widget_name',
+    );
+
     /**
-     * add tracking
+     * add tracking, product recommendations
      * @param Enlight_Event_EventArgs $arguments
      * @return boolean
      */
@@ -22,18 +27,19 @@ class Shopware_Plugins_Frontend_Boxalino_FrontendInterceptor
                 if($this->Config()->get('boxalino_product_recommendation_enabled')) {
                     // Replace similar & related products, if choice IDs given
                     $sArticle = $this->View()->sArticle;
-                    foreach (array(
-                        'sSimilarArticles' => 'boxalino_recommendation_widget_name',
-                        'sRelatedArticles' => 'boxalino_recommendation_related_widget_name',
-                    ) as $articleKey => $configOption) {
+                    $choiceIds = array();
+                    foreach ($this->_productRecommendations as $configOption) {
                         $choiceId = $this->Config()->get($configOption);
                         if (strlen($choiceId)) {
-                            $articles = $this->Helper()->findRecommendations(
-                                $id,
-                                'mainProduct',
-                                $choiceId
-                            );
-                            $sArticle[$articleKey] = $articles;
+                            $choiceIds[$configOption] = $choiceId;
+                        }
+                    }
+                    $articles = $this->Helper()->findRecommendations(
+                        $id, 'mainProduct', $choiceIds
+                    );
+                    foreach ($this->_productRecommendations as $articleKey => $configOption) {
+                        if (array_key_exists($configOption, $choiceIds)) {
+                            $sArticle[$articleKey] = $articles[$configOption];
                         }
                     }
                     $this->View()->assign('sArticle', $sArticle);
@@ -59,6 +65,35 @@ class Shopware_Plugins_Frontend_Boxalino_FrontendInterceptor
                 }
         }
         $this->addScript($script);
+        return false;
+    }
+
+    /**
+     * basket recommendations
+     * @param Enlight_Event_EventArgs $arguments
+     * @return boolean
+     */
+    public function basket(Enlight_Event_EventArgs $arguments)
+    {
+        if (!$this->Config()->get('boxalino_basket_recommendation_enabled')) {
+            return false;
+        }
+        $this->init($arguments);
+
+        $articles = array();
+        $choiceId = $this->Config()->get('boxalino_basket_widget_name');
+        if (strlen($choiceId)) {
+            // @todo extract from sBasket instead
+            $id = trim(strip_tags(htmlspecialchars_decode(stripslashes($this->Request()->sArticle))));
+            $articles = $this->Helper()->findRecommendations(
+                $id, 'mainProduct', $choiceId
+            );
+        }
+
+        $this->View()->loadTemplate('frontend/checkout/ajax_cart.tpl');
+        $this->View()->addTemplateDir($this->Bootstrap()->Path() . 'Views/');
+        $this->View()->extendsTemplate('frontend/ajax_cart.tpl');
+        $this->View()->assign('sRecommendations', $articles);
         return false;
     }
 
