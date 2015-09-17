@@ -297,7 +297,6 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
 
     /**
      * @param Shopware\Bundle\SearchBundle\FacetInterface $facet
-     * @throws \Exception
      * @return Shopware\Bundle\SearchBundle\FacetHandlerInterface
      */
     protected function getFacetHandler(SearchBundle\FacetInterface $facet)
@@ -318,7 +317,6 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
     /**
      * @param Shopware\Bundle\SearchBundle\Criteria $criteria
      * @param ShopContextInterface $context
-     * @throws \Exception
      * @return Shopware\Bundle\SearchBundle\FacetResultInterface[]
      */
     protected function createFacets(Shopware\Bundle\SearchBundle\Criteria $criteria, ShopContextInterface $context)

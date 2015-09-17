@@ -37,7 +37,7 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor4
     public function search(Enlight_Event_EventArgs $arguments)
     {
         if (!$this->Config()->get('boxalino_search_enabled')) {
-            return false;
+            return null;
         }
         $this->init($arguments);
 
