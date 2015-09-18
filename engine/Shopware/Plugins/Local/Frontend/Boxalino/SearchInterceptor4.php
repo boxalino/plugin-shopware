@@ -67,7 +67,7 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor4
             $choice = $this->Helper()->search(
                 $term, $pageOffset, $pageCount, array(
                     'category' => $currentCategoryFilter,
-                    'categoryName' => $array($this->categories[$currentCategoryFilter]['description']),
+                    'categoryName' => array($this->categories[$currentCategoryFilter]['description']),
                     'price' => $this->getCurrentPriceRange(),
                     'supplier' => !empty($this->conf['filter']['supplier']) ? $this->conf['filter']['supplier'] : null,
                     'sort' => $this->getSortOrder4()
@@ -125,6 +125,92 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor4
         }
 
         return false;
+    }
+
+    /**
+     * Generate array with pages for template
+     * @param $resultCount int Count of search results
+     * @param $resultsPerPage int How many products per page
+     * @param $currentPage int Current page offset
+     * @return array
+     */
+    public function generatePagesResultArray($resultCount, $resultsPerPage, $currentPage)
+    {
+        $numberPages = ceil($resultCount / $resultsPerPage);
+        if ($numberPages > 1) {
+            for ($i = 1; $i <= $numberPages; $i++) {
+                $sPages['pages'][$i] = $i;
+            }
+            // Previous page
+            if ($currentPage != 1) {
+                $sPages["before"] = $currentPage - 1;
+            } else {
+                $sPages["before"] = null;
+            }
+            // Next page
+            if ($currentPage != $numberPages) {
+                $sPages["next"] = $currentPage +1;
+            } else {
+                $sPages["next"] = null;
+            }
+        }
+        return $sPages;
+    }
+
+    /**
+     * @param $p13nSuppliers com\boxalino\p13n\api\thrift\FacetValue[]
+     * @return array
+     */
+    private function prepareSuppliers($p13nSuppliers) {
+        $keys = array();
+        $hitCount = array();
+        foreach($p13nSuppliers as $s) {
+            $id = intval($s->stringValue);
+            $keys[] = $id;
+            $hitCount[$id] = $s->hitCount;
+        }
+
+        $sql = '
+            SELECT s.*
+            FROM s_articles_supplier s
+            WHERE s.id IN (' . join(',', $keys) . ')
+            ORDER BY s.name
+        ';
+
+        $suppliers = array();
+        try {
+            $result = Shopware()->Db()->fetchAll($sql);
+            if (is_array($result)) {
+                foreach ($result as $row) {
+                    $row["count"] = $hitCount[$row["id"]];
+                    $suppliers[$row["id"]] = $row;
+                }
+            }
+        } catch (PDOException $e) {
+            Shopware()->PluginLogger()->debug('Boxalino SearchInterceptor 4: error preparing suppliers, PDOException: '. $e->getMessage());
+        }
+        return $suppliers;
+    }
+
+    private function preparePriceRanges($searchResult) {
+
+        $searchResultPriceFilters = array();
+        $configSearchPriceFilter = $this->config['filter']['price'];
+        $filterPrice = empty($configSearchPriceFilter) ? $this->configPriceFilter : $configSearchPriceFilter;
+
+        foreach ($filterPrice as $key => $filter) {
+            foreach ($searchResult as $result) {
+                $article = array();
+                $article['price'] = floatval($result->stringValue);
+                if ($article['price'] >= $filter['start'] && $article['price'] < $filter['end']) {
+                    if (isset($searchResultPriceFilters[$key]))
+                        $searchResultPriceFilters[$key] += $result->hitCount;
+                    else
+                        $searchResultPriceFilters[$key] = $result->hitCount;
+                }
+            }
+        }
+        return $searchResultPriceFilters;
     }
 
     /**
@@ -189,6 +275,33 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor4
             Shopware()->PluginLogger()->debug('Boxalino SearchInterceptor 4: error preparing category tree, PDOException: '. $e->getMessage());
         }
         $this->categories = $tree;
+    }
+
+    /**
+     * Returns a category tree
+     *
+     * @param int $id
+     * @param int $mainId
+     * @return array
+     */
+    protected function getCategoryTree($id, $mainId)
+    {
+        $sql = '
+            SELECT
+                `id` ,
+                `description`,
+                `parent`
+            FROM `s_categories`
+            WHERE `id`=?
+        ';
+        $cat = Shopware()->Db()->fetchRow($sql, array($id));
+        if (empty($cat['id']) || $id == $cat['parent'] || $id == $mainId) {
+            return array();
+        } else {
+            $cats = $this->getCategoryTree($cat['parent'], $mainId);
+            $cats[$id] = $cat;
+            return $cats;
+        }
     }
 
     private function prepareSearchConfiguration($term)
