@@ -231,7 +231,7 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
         return $choiceResponse;
     }
 
-    public function findRawRecommendations($id, $role, $p13nChoiceId, $count = 5, $fieldName = 'products_group_id')
+    public function findRawRecommendations($id, $role, $p13nChoiceId, $count = 5, $fieldName = 'products_group_id', $context = array())
     {
         $p13nHost = $this->config->get('boxalino_host');
         $p13nAccount = $this->getAccount();
@@ -251,15 +251,24 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
         $choiceRequest = $p13n->getChoiceRequest($p13nAccount, $cookieDomain);
         $choiceRequest->inquiries = array();
 
+        // Add context parameters if given
+        if (count($context)) {
+            $requestContext = new \com\boxalino\p13n\api\thrift\RequestContext();
+            $requestContext->parameters = $context;
+            $choiceRequest->requestContext = $requestContext;
+        }
+
         // Setup a context item
-        $contextItems = array(
-            new \com\boxalino\p13n\api\thrift\ContextItem(array(
-                'indexId' => $p13nAccount,
-                'fieldName' => $fieldName,
-                'contextItemId' => $id,
-                'role' => $role
-            ))
-        );
+        if (!empty($id)) {
+            $contextItems = array(
+                new \com\boxalino\p13n\api\thrift\ContextItem(array(
+                    'indexId' => $p13nAccount,
+                    'fieldName' => $fieldName,
+                    'contextItemId' => $id,
+                    'role' => $role
+                ))
+            );
+        }
 
         // Setup a search query
         $searchQuery = new \com\boxalino\p13n\api\thrift\SimpleSearchQuery();
@@ -280,7 +289,7 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
 
             // Connect search query to the inquiry
             $inquiry->simpleSearchQuery = $searchQuery;
-            $inquiry->contextItems = $contextItems;
+            if (!empty($id))$inquiry->contextItems = $contextItems;
 
             // Add inquiry to choice request
             $choiceRequest->inquiries[] = $inquiry;
@@ -301,8 +310,8 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
         return $choiceResponse;
     }
 
-    public function findRecommendations($id, $role, $p13nChoiceId, $count = 5, $fieldName = 'products_group_id') {
-        $results = $this->extractResults($this->findRawRecommendations($id, $role, $p13nChoiceId, $count, $fieldName), $p13nChoiceId);
+    public function findRecommendations($id, $role, $p13nChoiceId, $count = 5, $fieldName = 'products_group_id', $context = array()) {
+        $results = $this->extractResults($this->findRawRecommendations($id, $role, $p13nChoiceId, $count, $fieldName, $context), $p13nChoiceId);
         if (is_array($p13nChoiceId)) {
             $articleResults = array();
             foreach ($results as $key => $result) {
