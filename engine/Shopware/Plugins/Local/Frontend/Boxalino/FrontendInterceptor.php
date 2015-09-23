@@ -44,7 +44,7 @@ class Shopware_Plugins_Frontend_Boxalino_FrontendInterceptor
                     }
                     $this->View()->assign('sArticle', $sArticle);
                 }
-                $script = Shopware_Plugins_Frontend_Boxalino_EventReporter::reportProductView($id);
+                $script = Shopware_Plugins_Frontend_Boxalino_EventReporter::reportProductView($sArticle['articleDetailsID']);
                 break;
             case 'search':
                 $script = Shopware_Plugins_Frontend_Boxalino_EventReporter::reportSearch($this->Request());
