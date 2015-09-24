@@ -1,0 +1,1448 @@
+<?php
+
+class Shopware_Plugins_Frontend_Boxalino_DataExporter
+{
+    protected $request;
+    protected $manager;
+
+    const ITEM_BRANDS = 'item_brands';
+    const ITEM_BRANDS_CSV = 'item_brands.csv';
+    const ITEM_PROPERTIES = 'item_vals';
+    const ITEM_PROPERTIES_CSV = 'item_properties.csv';
+    const CATEGORIES = 'categories';
+    const CATEGORIES_CSV = 'categories.csv';
+    const ITEM_CATEGORIES = 'item_categories';
+    const ITEM_CATEGORIES_CSV = 'item_categories.csv';
+    const CUSTOMERS = 'customer_vals';
+    const CUSTOMERS_CSV = 'customers.csv';
+    const TRANSACTIONS = 'transactions';
+    const TRANSACTIONS_CSV = 'transactions.csv';
+
+    const URL_XML = 'http://di1.bx-cloud.com/frontend/dbmind/en/dbmind/api/data/source/update';
+    const URL_XML_DEV = 'http://di1.bx-cloud.com/frontend/dbmind/en/dbmind/api/data/source/update?dev=true';
+
+    const URL_ZIP = 'http://di1.bx-cloud.com/frontend/dbmind/en/dbmind/api/data/push';
+    const URL_ZIP_DEV = 'http://di1.bx-cloud.com/frontend/dbmind/en/dbmind/api/data/push?dev=true';
+
+    const XML_DELIMITER = ',';
+    const XML_ENCLOSURE = '"';
+    const XML_NEWLINE = '\\n';
+    const XML_ESCAPE = '\\\\';
+    const XML_ENCODE = 'UTF-8';
+    const XML_FORMAT = 'CSV';
+
+    /**
+     * @var SimpleXMLElement
+     */
+    protected $xml;
+
+    protected $propertyDescriptions = array();
+
+    protected $dirPath;
+    protected $db;
+    protected $delta;
+    protected $deltaLast;
+    protected $fileHandle;
+
+    protected $_attributes = array();
+    protected $config = array();
+
+    /**
+     * constructor
+     *
+     * @param string $dirPath
+     * @param bool   $delta
+     */
+    public function __construct($dirPath, $delta = false)
+    {
+        $this->delta = $delta;
+        $this->dirPath = $dirPath;
+        $this->db = Shopware()->Db();
+    }
+
+    /**
+     * run the exporter
+     *
+     * iterates over all shops and exports them according to their settings
+     *
+     * @return array
+     */
+    public function run()
+    {
+        $data = array();
+        foreach ($this->getMainShopIds() as $id) {
+            // if data sync is enabled, run it for that shop id
+            if ($this->getConfigurationByShopId($id, 'enabled')) {
+                $resultPushXml = 'not pushed';
+                $resultPushZip = 'not pushed';
+
+                $status = $this->createExportFiles($id);
+                if ($status) {
+                    $resultPushXml = $this->pushXml($id);
+                    $resultPushZip = $this->pushZip($id);
+                }
+
+                $data[$account] = array(
+                    'xml' => $resultPushXml,
+                    'zip' => $resultPushZip,
+                    'success' => $status
+                );
+            }
+        }
+        return $data;
+    }
+
+    /**
+     * create export files for given shop id
+     *
+     * @param int $id
+     * @return boolean
+     */
+    protected function createExportFiles($id)
+    {
+        if (@mkdir($this->dirPath, 0777, true)) {
+            return false;
+        }
+
+        $metadataFactoryClassName = $this->getClassMetadataFactoryName();
+        /** @var $metaDataFactory \Doctrine\ORM\Mapping\ClassMetadataFactory */
+        $metaDataFactory = new $metadataFactoryClassName;
+        $metaDataFactory->setEntityManager($this->getEntityManager());
+
+        $zip_name = $this->dirPath . 'export.zip';
+        @unlink($zip_name);
+
+        $zip = new ZipArchive();
+        if ($zip->open($zip_name, ZIPARCHIVE::CREATE) !== TRUE) {
+            return false;
+        }
+
+        // Create files
+        $this->startXml();
+        $zip->addFile($this->getArticles(), self::ITEM_PROPERTIES_CSV);
+        $zip->addFile($this->getBrands(), self::ITEM_BRANDS_CSV);
+        $zip->addFile($this->getCategories(), self::CATEGORIES_CSV);
+        $zip->addFile($this->getItemCategories(), self::ITEM_CATEGORIES_CSV);
+        $zip->addFile($this->getCustomers(), self::CUSTOMERS_CSV);
+        $zip->addFile($this->getTransactions(), self::TRANSACTIONS_CSV);
+        $zip->addFromString('properties.xml', $this->finishAndGetXml());
+        $zip->close();
+
+        $dom = new DOMDocument('1.0');
+        $dom->preserveWhiteSpace = false;
+        $dom->formatOutput = true;
+        $dom->loadXML($this->xml->asXML());
+        $saveXML = $dom->saveXML();
+        file_put_contents($this->dirPath . 'properties.xml', $saveXML);
+
+        $this->db->query('TRUNCATE `exports`');
+        $this->db->query('INSERT INTO `exports` values(NOW())');
+        return true;
+    }
+
+    /**
+     * push the data feeds XML configuration file to the boxalino data intelligence
+     *
+     * @param int $id
+     * @return string
+     */
+    protected function pushXml($id) {
+        $dev = (bool) $this->getConfigurationByShopId($id, 'dev');
+        $fields = array(
+            'username'  => $this->getConfigurationByShopId($id, 'username'),
+            'password'  => $this->getConfigurationByShopId($id, 'password'),
+            'account'   => $this->getConfigurationByShopId($id, 'account'),
+            'dev'       => $dev ? 'true' : 'false',
+            'template' => 'standard_source',
+            'xml'      => file_get_contents($this->dirPath . 'properties.xml')
+        );
+        return $this->pushFile(
+            $dev ? self::URL_XML_DEV : self::URL_XML,
+            $fields
+        );
+    }
+
+    /**
+     * push the data feed ZIP file to the boxalino data intelligence
+     *
+     * @param int $id
+     * @return string
+     */
+    protected function pushZip($id) {
+        $dev = $this->getConfigurationByShopId($id, 'dev');
+        $fields = array(
+            'username'  => $this->getConfigurationByShopId($id, 'username'),
+            'password'  => $this->getConfigurationByShopId($id, 'password'),
+            'account'   => $this->getConfigurationByShopId($id, 'account'),
+            'dev'       => $dev ? 'true' : 'false',
+            'delta'     => $this->delta ? 'true' : 'false',
+            'data'       => '@' . $this->dirPath . 'export.zip;type=application/zip'
+        );
+        return $this->pushFile(
+            $dev ? self::URL_ZIP_DEV : self::URL_ZIP,
+            $fields
+        );
+    }
+
+    /**
+     * push POST fields to a URL, returning the response
+     *
+     * @param unknown $url
+     * @param unknown $fields
+     * @return string
+     */
+    protected function pushFile($url, $fields) {
+        $s = curl_init();
+        curl_setopt($s, CURLOPT_URL, $url);
+        curl_setopt($s, CURLOPT_TIMEOUT, 35000);
+        curl_setopt($s, CURLOPT_POST, true);
+        curl_setopt($s, CURLOPT_ENCODING, '');
+        curl_setopt($s, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($s, CURLOPT_POSTFIELDS, $fields);
+        $responseBody = curl_exec($s);
+        curl_close($s);
+        return $responseBody;
+    }
+
+    /**
+     * get a shop specific configuration setting
+     *
+     * @param int $id
+     * @param string $key
+     * @return bool|string
+     */
+    protected function getConfigurationByShopId($id, $key) {
+        if (!array_key_exists($id, $this->config)) {
+            $config = array(
+                'shop' => Shopware()->Models()->find('Shopware\\Models\\Shop\\Shop', $id),
+                'db'   => $this->db,
+            );
+            $scopeConfig = new \Shopware_Components_Config($config);
+
+            $this->config[$id] = array(
+                'enabled'  => (bool) $scopeConfig->get('boxalino_export', false),
+                'account'  => $scopeConfig->get('boxalino_account'),
+                'username' => $scopeConfig->get('boxalino_form_username'),
+                'password' => $scopeConfig->get('boxalino_form_password'),
+                'dev'      => (bool) $scopeConfig->get('boxalino_dev', true),
+            );
+        }
+        return $this->config[$id][$key];
+    }
+
+    /**
+     * @return string
+     */
+    protected function getArticles()
+    {
+        // property descriptions for XML configuration
+        $this->propertyDescriptions[self::ITEM_PROPERTIES] = array(
+            'source' => self::ITEM_PROPERTIES,
+            'fields' => array(
+                'item_id' => array('type' => 'id'),
+                'product_id' => array('column' => 'item_id'),
+                'group_id',
+                'ordernumber',
+                'mainnumber' => array('name' => 'asd'),
+                'name' => array('type'=>'title'),
+                'additionaltext' => array('type' => 'text'),
+                'supplier',
+                'tax',
+                'pseudoprice' => array('type' => 'price'),
+                'baseprice' => array('type' => 'number'),
+                'active',
+                'instock' => array('type' => 'number'),
+                'stockmin' => array('type' => 'number'),
+                'description' => array('type' => 'body'),
+                'description_long' => array('type' => 'body'),
+                'shippingtime',
+                'added' => array('type' => 'date', 'params' => array(
+                    'fieldParameter' => array('name' => 'multiValued', 'value' => 'false')
+                )),
+                'changed' => array('type' => 'date', 'params' => array(
+                    'fieldParameter' => array('name' => 'multiValued', 'value' => 'false')
+                )),
+                'releasedate' => array('type' => 'date', 'params' => array(
+                    'fieldParameter' => array('name' => 'multiValued', 'value' => 'false')
+                )),
+                'shippingfree',
+                'topseller' => array('type' => 'number', 'params' => array(
+                    'fieldParameter' => array('name' => 'multiValued', 'value' => 'false')
+                )),
+                'metaTitle',
+                'keywords',
+                'minpurchase' => array('type' => 'number'),
+                'purchasesteps',
+                'maxpurchase' => array('type' => 'number'),
+                'purchaseunit',
+                'referenceunit',
+                'packunit',
+                'unitID',
+                'pricegroupID',
+                'pricegroupActive',
+                'laststock',
+                'suppliernumber',
+                'impressions',
+                'sales' => array('type' => 'number', 'params' => array(
+                    'fieldParameter' => array('name' => 'multiValued', 'value' => 'false')
+                )),
+                'esd',
+                'weight' => array('type' => 'number'),
+                'width' => array('type' => 'number'),
+                'height' => array('type' => 'number'),
+                'length' => array('type' => 'number'),
+                'ean',
+                'unit',
+                'mediaId' => array('type' => 'number'),
+                'property_values' => array('name' => 'property_values', 'column' => 'propertyValues', 'params' => array(
+                    'fieldParameter' => array('name' => 'splitValues', 'value' => '|')
+                ))
+            )
+        );
+
+        // add source to XML configuration
+        $sources = $this->xml->xpath('//sources');
+        $sources = $sources[0];
+        $source = $sources->addChild('source');
+        $source->addAttribute('type', 'item_data_file');
+        $source->addAttribute('id', self::ITEM_PROPERTIES);
+        $source->addChild('file')->addAttribute('value', self::ITEM_PROPERTIES_CSV);
+        $source->addChild('itemIdColumn')->addAttribute('value', 'item_id');
+        $this->appendXmlOptions($source);
+
+        // get all attributes
+        $metaDataFactory = $this->getManager()->getMetadataFactory();
+        $attributeFields = $metaDataFactory->getMetadataFor('Shopware\Models\Attribute\Article')->fieldNames;
+
+        $attributeFields = array_flip($attributeFields);
+        unset($attributeFields['id']);
+        unset($attributeFields['articleDetailId']);
+        unset($attributeFields['articleId']);
+        $attributeFields = array_flip($attributeFields);
+
+        $db = $this->db;
+
+        // get all languages of this shop
+        $sql = $db->select()
+                  ->from('s_core_shops', array('id'))
+                  ->where($this->qi('default') . ' = ?', 0);
+        $languages = $db->fetchCol($sql);
+
+        // get the default locale
+        $locale = $this->getDefaultLocale();
+        $locale = $locale['locale'];
+
+        // get the default customer group (no support for multiple customergroups yet)
+        $sql = $db->select()
+                  ->from('s_core_customergroups', array('id', 'groupkey', 'taxinput'))
+                  ->where($this->qi('groupkey') . ' = ?', 'EK')
+                  ->where($this->qi('mode') . ' = ?', 0);
+        $customergroups = $db->fetchAll($sql);
+
+        // declare common query building blocks
+        $dot = $db->quote('.');
+        $pipe = $db->quote('|');
+        $empty = $db->quote('');
+        $colon = $db->quote(':');
+        $article = $db->quote('article');
+        $variant = $db->quote('variant');
+        $quoted0 = $db->quote(0);
+        $quoted1 = $db->quote(1);
+        $quoted2 = $db->quote(2);
+        $quoted3 = $db->quote(3);
+        $quoted100 = $db->quote(100);
+        $zeroDate = $db->quote('0000-00-00');
+        $zeroDateTime = $db->quote('0000-00-00 00:00:00');
+
+        $fieldId = $this->qi('id');
+        $fieldMain = $this->qi('main');
+        $fieldName = $this->qi('name');
+        $fieldPosition = $this->qi('position');
+        $fieldArticleId = $this->qi('articleID');
+        $fieldObjectKey = $this->qi('objectkey');
+        $fieldObjectType = $this->qi('objecttype');
+        $fieldCategoryId = $this->qi('categoryID');
+        $fieldObjectLanguage = $this->qi('objectlanguage');
+
+        $ai = $this->qi('ai');
+        $cg = $this->qi('cg');
+        $co = $this->qi('co');
+
+        $aId = $this->qi('a.id');
+        $dId = $this->qi('d.id');
+        $tTax = $this->qi('t.tax');
+        $adId = $this->qi('ad.id');
+        $raId = $this->qi('ra.id');
+        $radId = $this->qi('rad.id');
+        $eFile = $this->qi('e.file');
+        $dKind = $this->qi('d.kind');
+        $aDatum = $this->qi('a.datum');
+        $faValueId = $this->qi('fa.valueId');
+        $faArticleId = $this->qi('fa.articleID');
+        $saArticleId = $this->qi('sa.articleID');
+        $aChangetime = $this->qi('a.changetime');
+        $corArticleId = $this->qi('cor.article_id');
+        $dReleasedate = $this->qi('d.releasedate');
+        $aimpArticleId = $this->qi('aimp.articleID');
+        $raMainDetailId = $this->qi('ra.main_detail_id');
+        $radOrdernumber = $this->qi('ordernumber');
+        $aimpImpressions = $this->qi('aimp.impressions');
+        $saRelatedArticle = $this->qi('sa.relatedarticle');
+        $aiArticleDetailId = $this->qi('ai.article_detail_id');
+
+        // start putting together the main field list, special cases first
+        $fields = array(
+            'group_id' => 'id',
+            'added' => new Zend_Db_Expr(
+                "IF($aDatum = $zeroDate, $empty, $aDatum)"
+            ),
+            'changed' => new Zend_Db_Expr(
+                "IF($aChangetime = $zeroDateTime, $empty, $aChangetime)"
+            ),
+            'categorypaths' => new Zend_Db_Expr($empty),
+            'filterGroupId' => 'filtergroupID',
+            'configuratorsetID' => 'configurator_set_id',
+        );
+
+        // direct mapped fields
+        $simpleFields = array(
+            'active',
+            'topseller',
+            'metaTitle',
+            'keywords',
+            'pricegroupID',
+            'pricegroupActive',
+            'laststock',
+        );
+        foreach ($simpleFields as $key) {
+            $fields[$key] = $key;
+        }
+
+        // default locale fields
+        $localeFields = array(
+            'name',
+            'description',
+            'description_long',
+        );
+        foreach ($localeFields as $key) {
+            $fields[$key . '_' . $locale] = $key;
+        }
+
+        // other language specific fields
+        $translationFields = array(
+            'txtArtikel'          => 'name',
+            'txtzusatztxt'        => 'additionaltext',
+            'txtshortdescription' => 'description',
+            'txtlangbeschreibung' => 'description_long'
+        );
+        $shopLanguages = $this->getLocales();
+        foreach ($languages as $language) {
+            foreach ($translationFields as $field) {
+                $fields[
+                    $field . '_' . $shopLanguages[$language]['locale']
+                ] = new Zend_Db_Expr($empty);
+            }
+        }
+
+        // relations
+        $relationFields = array(
+            'similar'     => 'similar',
+            'crosselling' => 'relationships',
+        );
+        foreach ($relationFields as $key => $table) {
+            $innerSelect = $db->select()
+                              ->from(array('sa' => 's_articles_' . $table), array())
+                              ->joinInner(
+                                array('ra' => 's_articles'),
+                                "$raId = $saRelatedArticle",
+                                array()
+                              )
+                              ->joinInner(
+                                array('rad' => 's_articles_details'),
+                                "$radId = $raMainDetailId",
+                                new Zend_Db_Expr("GROUP_CONCAT(
+                                    $radOrdernumber SEPARATOR $pipe
+                                )")
+                              )
+                              ->where("$saArticleId = $aId");
+            $fields[$key] = new Zend_Db_Expr("($innerSelect)");
+        }
+
+        // categories
+        $innerSelect = $db->select()
+                          ->from(
+                            's_articles_categories',
+                            new Zend_Db_Expr("GROUP_CONCAT(
+                                $fieldCategoryId SEPARATOR $pipe
+                            )")
+                          )
+                          ->where("$fieldArticleId = $aId");
+        $fields['categories'] = new Zend_Db_Expr("($innerSelect)");
+
+        // images
+        $shop = $this->getManager()->getRepository('Shopware\Models\Shop\Shop')->getActiveDefault();
+        $shop->registerResources(Shopware()->Bootstrap());
+        $imagePath = $db->quote('http://'. $shop->getHost() . $shop->getBasePath()  . '/media/image/');
+        $innerSelect = $db->select()
+                          ->from(
+                            's_articles_img',
+                            new Zend_Db_Expr("GROUP_CONCAT(
+                                CONCAT($imagePath, img, $dot, extension)
+                                ORDER BY $fieldMain, $fieldPosition
+                                SEPARATOR $pipe
+                            )")
+                          )
+                          ->where("$fieldArticleId = $aId");
+        $fields['images'] = new Zend_Db_Expr("($innerSelect)");
+
+        // dynamic properties
+        $innerSelect = $db->select()
+                          ->from(
+                            array('fa' => 's_filter_articles'),
+                            new Zend_Db_Expr(
+                                "GROUP_CONCAT($faValueId SEPARATOR $pipe)"
+                            )
+                          )
+                          ->where("$faArticleId = $aId");
+        $fields['propertyValues'] = new Zend_Db_Expr("($innerSelect)");
+
+        // configurable properties
+        $innerSelect = $db->select()
+                          ->from(
+                            array('ad' => 's_articles_details'),
+                            new Zend_Db_Expr("GROUP_CONCAT(
+                                CONCAT_WS(
+                                    $colon, $cg.$fieldName, $co.$fieldName
+                                ) SEPARATOR $pipe
+                            )")
+                          )
+                          ->joinInner(
+                            array('cor' => 's_article_configurator_option_relations'),
+                            "$corArticleId = $adId",
+                            array()
+                          )
+                          ->joinInner(
+                            array('co' => 's_article_configurator_options'),
+                            "$co.$fieldId = " . $this->qi('cor.option_id'),
+                            array()
+                          )
+                          ->joinInner(
+                            array('cg' => 's_article_configurator_groups'),
+                            "$cg.$fieldId = " . $this->qi('co.group_id'),
+                            array()
+                          )
+                          ->where("$adId = $dId")
+                          ->group('ad.id');
+        $fields['configuratorOptions'] = new Zend_Db_Expr("($innerSelect)");
+
+        // base query
+        $sql = $db->select()
+                  ->from(array('a' => 's_articles'), $fields)
+                  ->where($this->qi('a.mode') . ' = ?', 0)
+                  ->group('a.id')
+                  ->order(array('a.id', 'd.kind', 'd.id'));
+        if ($this->delta) {
+            $sql->where("$aChangetime > ?", $this->getLastDelta());
+        }
+
+        // details
+        $fields = array(
+            'item_id' => 'id',
+            'additionaltext_' . $locale => 'additionaltext',
+            'releasedate' => new Zend_Db_Expr(
+                "IF($dReleasedate = $zeroDate, $empty, $dReleasedate)"
+            ),
+        );
+        $simpleFields = array(
+            'ordernumber',
+            'instock',
+            'stockmin',
+            'shippingtime',
+            'shippingfree',
+            'minpurchase',
+            'purchasesteps',
+            'maxpurchase',
+            'purchaseunit',
+            'referenceunit',
+            'packunit',
+            'unitID',
+            'suppliernumber',
+            'sales',
+            'weight',
+            'width',
+            'height',
+            'length',
+            'ean',
+        );
+        foreach ($simpleFields as $key) {
+            $fields[$key] = $key;
+        }
+        $sql->join(
+            array('d' => 's_articles_details'),
+            $this->qi('d') . ".$fieldArticleId = $aId AND $dKind <> $quoted3",
+            $fields
+        );
+
+        // mainnumber (!= ordernumber)
+        $sql->join(
+            array('d2' => 's_articles_details'),
+            $this->qi('d2.id') . ' = ' . $this->qi('a.main_detail_id'),
+            array('mainnumber' => 'ordernumber')
+        );
+
+        // attributes
+        $fields = array();
+        foreach ($attributeFields as $columnName => $field) {
+            $fields['attr_' . $field] = $columnName;
+            $this->propertyDescriptions[self::ITEM_PROPERTIES]['fields'][] = 'attr_' . $field;
+        }
+        $sql->joinLeft(
+            array('at' => 's_articles_attributes'),
+            $this->qi('at.articledetailsID') . " = $dId",
+            $fields
+        );
+
+        // units
+        $sql->joinLeft(
+            array('u' => 's_core_units'),
+            $this->qi('u.id') . ' = ' . $this->qi('d.unitID'),
+            array('unit')
+        );
+
+        // taxes
+        $sql->joinLeft(
+            array('t' => 's_core_tax'),
+            $this->qi('a.taxID') . ' = ' . $this->qi('t.id'),
+            array('tax')
+        );
+
+        // suppliers
+        $sql->joinLeft(
+            array('s' => 's_articles_supplier'),
+            $this->qi('a.supplierID') . ' = ' . $this->qi('s.id'),
+            array('supplier' => 'id')
+        );
+
+        // esd
+        $sql->joinLeft(
+            array('e' => 's_articles_esd'),
+            $this->qi('e.articledetailsID') . " = $dId",
+            array('esd' => new Zend_Db_Expr(
+                "IF($eFile IS NULL, $quoted0, $quoted1)"
+            ))
+        );
+
+        // configuratortype
+        $sql->joinLeft(
+            array('acs' => 's_article_configurator_sets'),
+            $this->qi('acs.id') . ' = ' . $this->qi('a.configurator_set_id'),
+            array('configuratortype' => 'type')
+        );
+
+        // mediaId
+        $sql->joinLeft(
+            array('ai' => 's_articles_img'),
+            "$ai.$fieldArticleId = $aId AND
+            $aiArticleDetailId IS NULL AND
+            $ai.$fieldMain = $quoted1",
+            array('mediaId' => 'media_id')
+        );
+
+        // impressions
+        $sql->joinLeft(
+            array('aimp' => 's_statistics_article_impression'),
+            "$aimpArticleId = $aId",
+            array('impressions' => new Zend_Db_Expr("SUM($aimpImpressions)"))
+        );
+
+        // prices by customergroup (currently only of default group)
+        if (!empty($customergroups)) {
+            $p = $this->qi('p');
+            $fieldFrom = $this->qi('from');
+            $fieldPrice = $this->qi('price');
+            $fieldPriceBase = $this->qi('baseprice');
+            $fieldPriceGroup = $this->qi('pricegroup');
+            $fieldPricePseudo = $this->qi('pseudoprice');
+            $fieldArticleDetailsId = $this->qi('articledetailsID');
+            foreach ($customergroups as $group) {
+                $tableKey = 'p';
+                $key = 'price';
+                $taxFactor = '';
+                if (!empty($group['taxinput'])) {
+                    $taxFactor = " * ($quoted100 + $tTax) / $quoted100";
+                }
+                if ($group['groupkey'] == 'EK') {
+                    $fields = array(
+                        'pseudoprice' => new Zend_Db_Expr(
+                            "ROUND($p.$fieldPricePseudo$taxFactor, $quoted2)"
+                        ),
+                        'baseprice' => new Zend_Db_Expr(
+                            "ROUND($p.$fieldPriceBase$taxFactor, $quoted2)"
+                        ),
+                    );
+                } else {
+                    $tableKey .= $group['id'];
+                    $key .= '_' . $group['groupkey'];
+                    $fields = array();
+                }
+                $this->propertyDescriptions[
+                    self::ITEM_PROPERTIES
+                ]['fields'][$key] = array('type' => 'discounted');
+
+                $quotedTableKey = $this->qi($tableKey);
+                $quotedGroupKey = $db->quote($group['groupkey']);
+                $fields[$key] = new Zend_Db_Expr(
+                    "ROUND($quotedTableKey.$fieldPrice$taxFactor, $quoted2)"
+                );
+
+                $sql->joinLeft(
+                    array($tableKey => 's_articles_prices'),
+                    "$quotedTableKey.$fieldArticleDetailsId = $dId AND
+                    $quotedTableKey.$fieldPriceGroup = $quotedGroupKey AND
+                    $quotedTableKey.$fieldFrom = $quoted1",
+                    $fields
+                );
+            }
+        }
+
+        // translations as serialized PHP objects
+        foreach ($languages as $language) {
+            $quotedTableKey = $this->qi('ta_' . $language);
+            $quotedLanguage = $db->quote($language);
+            $sql->joinLeft(
+                    array('ta_' . $language => 's_core_translations'),
+                    "$quotedTableKey.$fieldObjectKey = $aId AND
+                    $quotedTableKey.$fieldObjectType = $article AND
+                    $quotedTableKey.$fieldObjectLanguage = $quotedLanguage",
+                    array('article_translation_' . $shopLanguages[$language]['locale'] => 'objectdata')
+            );
+            $sql->joinLeft(
+                    array('td_' . $language => 's_core_translations'),
+                    "$quotedTableKey.$fieldObjectKey = $dId AND
+                    $quotedTableKey.$fieldObjectType = $variant AND
+                    $quotedTableKey.$fieldObjectLanguage = $quotedLanguage",
+                    array('detail_translation_' . $shopLanguages[$language]['locale'] => 'objectdata')
+            );
+        }
+
+        $stmt = $db->query($sql);
+        $sql = null;
+        $fields = null;
+
+        // prepare file & stream results into it
+        $file_name = $this->dirPath . self::ITEM_PROPERTIES_CSV;
+        $this->openFile($file_name);
+
+        $first = true;
+        while ($row = $stmt->fetch()) {
+            $row = $this->prepareArticleRow($row, $languages, $translationFields);
+
+            if ($first) {
+                $first = false;
+                $this->addRowToFile(array_keys($row));
+            }
+            $this->addRowToFile($row);
+        }
+        $this->closeFile();
+
+        return $file_name;
+    }
+
+    /**
+     * @return string
+     */
+    protected function getBrands()
+    {
+        // prepare XML configuration
+        $this->propertyDescriptions[self::ITEM_BRANDS] = array(
+            'source' => self::ITEM_BRANDS,
+            'fields' => array()
+        );
+        $sources = $this->xml->xpath('//sources');
+        $sources = $sources[0];
+        $source = $sources->addChild('source');
+        $source->addAttribute('type', 'item_data_file');
+        $source->addAttribute('id', self::ITEM_BRANDS);
+        $source->addChild('file')->addAttribute('value', self::ITEM_BRANDS_CSV);
+        $source->addChild('itemIdColumn')->addAttribute('value', 'item_id');
+        $this->appendXmlOptions($source);
+
+        $properties = $this->xml->xpath('//properties');
+        $properties = $properties[0];
+        $property = $properties->addChild('property');
+        $property->addAttribute('id', 'brand');
+        $property->addAttribute('type', 'text');
+        $transform = $property->addChild('transform');
+        $logic = $transform->addChild('logic');
+        $logic->addAttribute('source', self::ITEM_BRANDS);
+        $logic->addAttribute('type', 'direct');
+        foreach($this->getLocales() as $l) {
+            $field = $logic->addChild('field');
+            $field->addAttribute('language', $l['locale']);
+            $field->addAttribute('column', 'brand_'.$l['locale']);
+        }
+        $property->addChild('params');
+
+        // prepare query
+        $db = $this->db;
+        $sql = $db->select()
+                  ->from(array('a' => 's_articles'), array('id'))
+                  ->join(
+                      array('asup' => 's_articles_supplier'),
+                      $this->qi('a.supplierID') . ' = ' .
+                      $this->qi('asup.id'),
+                      array('name')
+                  )
+                  ->where($this->qi('a.active') . ' = ?', 1);
+        $stmt = $db->query($sql);
+
+        // prepare file & stream results into it
+        $file_name = $this->dirPath . self::ITEM_BRANDS_CSV;
+        $this->openFile($file_name);
+
+        $headers = array('item_id');
+        $locales = $this->getLocales();
+        foreach($locales as $l) {
+            $headers[] = 'brand_' . $l['locale'];
+        }
+        $this->addRowToFile($headers);
+
+        while ($row = $stmt->fetch()) {
+            $brand = array($row['id']);
+            foreach($locales as $l) {
+                $brand[] = $row['name'];
+            }
+            $this->addRowToFile($brand);
+        }
+        $this->closeFile();
+
+        return $file_name;
+    }
+
+    /**
+     * @return string
+     */
+    protected function getCategories()
+    {
+        // prepare XML configuration
+        $this->propertyDescriptions[self::CATEGORIES] = array(
+            'source' => self::CATEGORIES,
+            'fields' => array()
+        );
+        $sources = $this->xml->xpath('//sources');
+        $sources = $sources[0];
+        $source = $sources->addChild('source');
+        $source->addAttribute('type', 'hierarchical');
+        $source->addAttribute('id', self::CATEGORIES);
+        $source->addChild('file')->addAttribute('value', self::CATEGORIES_CSV);
+        $source->addChild('referenceIdColumn')->addAttribute('value', 'cat_id');
+        $source->addChild('parentIdColumn')->addAttribute('value', 'parent_id');
+        $labelColumns = $source->addChild('labelColumns');
+        foreach($this->getLocales() as $l) {
+            $label = $labelColumns->addChild('language');
+            $label->addAttribute('name', $l['locale']);
+            $label->addAttribute('value', 'value_'.$l['locale']);
+        }
+        $this->appendXmlOptions($source);
+
+        // prepare queries
+        $db = $this->db;
+        $sql = $db->select()
+                  ->from('s_core_shops', array('locale_id', 'category_id'));
+        $categoryLanguages = array();
+        foreach ($db->fetchAll($sql) as $a) {
+            $categoryLanguages[$a['locale_id']] = $a['category_id'];
+        }
+
+        $sql = $db->select()
+                  ->from('s_categories', array('id', 'parent', 'description', 'path'))
+                  ->where($this->qi('path') . ' IS NOT NULL')
+                  ->where($this->qi('id') . ' <> ?', 1);
+        $stmt = $db->query($sql);
+
+        // prepare file & stream results into it
+        $file_name = $this->dirPath . self::CATEGORIES_CSV;
+        $this->openFile($file_name);
+
+        $headers = array('cat_id', 'parent_id');
+        $locales = $this->getLocales();
+        foreach($locales as $l) {
+            $headers[] = 'value_' . $l['locale'];
+        }
+        $this->addRowToFile($headers);
+
+        while ($row = $stmt->fetch()) {
+            $category = array($row['id'], $row['parent']);
+            foreach($locales as $l) {
+                if (strpos($row['path'], '|' . $categoryLanguages[$l['locale_id']] . '|') !== false) {
+                    $category[] = $row['description'];
+                } else if($row['id'] == $categoryLanguages[$l['locale_id']]) {
+                    $category[] = $row['description'];
+                } else {
+                    $category[] = '';
+                }
+            }
+            $this->addRowToFile($category);
+        }
+        $this->closeFile();
+
+        return $file_name;
+    }
+
+    protected function getItemCategories()
+    {
+        // prepare XML configuration
+        $this->propertyDescriptions[self::ITEM_CATEGORIES] = array(
+            'source' => self::ITEM_CATEGORIES,
+            'fields' => array(
+                'category' => array('type' => 'hierarchical', 'column' => 'cat_id', 'logical_type' => 'reference', 'params' => array(
+                    'referenceSource' => array('value'=>'categories')
+                ))
+            )
+        );
+        $sources = $this->xml->xpath('//sources');
+        $sources = $sources[0];
+        $source = $sources->addChild('source');
+        $source->addAttribute('type', 'item_data_file');
+        $source->addAttribute('id', self::ITEM_CATEGORIES);
+        $source->addChild('file')->addAttribute('value', self::ITEM_CATEGORIES_CSV);
+        $source->addChild('itemIdColumn')->addAttribute('value', 'item_id');
+        $this->appendXmlOptions($source);
+
+        // build category tree for current language
+        $db = $this->db;
+        $tree = array();
+        $parents = array();
+        $sql = $db->select()
+                  ->from('s_categories', array('id', 'parent', 'description', 'path'))
+                  ->where($this->qi('path') . ' IS NOT NULL');
+        $results = $db->fetchAll($sql);
+        foreach ($db->fetchAll($sql) as $r) {
+            $tree[$r['id']] = $r;
+        }
+        foreach($tree as $r) {
+            if ($r['path'] != null) {
+                $split = explode('|', $r['path']);
+                if (!isset($parents[$r['id']])) {
+                    $parents[$r['id']] = array();
+                }
+                foreach($split as $id) {
+                    if (!empty($id) && isset($tree[$id])) {
+                        $parents[$r['id']][] = $id;
+                    }
+                }
+            }
+        }
+
+        // get category per item
+        $sql = $db->select()
+                  ->from('s_articles_categories', array('articleID', 'categoryID'));
+        $itemCategoryMap = array();
+        foreach ($db->fetchAll($sql) as $a) {
+            $itemCategoryMap[$a['articleID'] . '_' . $a['categoryID']] = array($a['articleID'], $a['categoryID']);
+            foreach($parents[$a['categoryID']] as $p) {
+                $itemCategoryMap[$a['articleID'] . '_' . $p] = array($a['articleID'], $p);
+            }
+        }
+
+        // prepare file & stream results into it
+        $file_name = $this->dirPath . self::ITEM_CATEGORIES_CSV;
+        $this->openFile($file_name);
+        $this->addRowToFile(array('item_id', 'cat_id'));
+
+        foreach ($itemCategoryMap as $row) {
+            $this->addRowToFile($row);
+        }
+        $this->closeFile();
+
+        return $file_name;
+    }
+
+    /**
+     * @return string
+     */
+    protected function getCustomers() {
+        $headers = array('id', 'customer_id', 'public_id', 'country', 'zip', 'dob', 'gender');
+        $should_export_email = (bool) Shopware()->Config()->get('boxalino_customer_email');
+        if ($should_export_email) {
+            $headers[] = 'email';
+        }
+
+        // prepare XML configuration
+        $containers = $this->xml->xpath('//containers');
+        $containers = $containers[0];
+        $customers = $containers->addChild('container');
+        $customers->addAttribute('id', 'customers');
+        $customers->addAttribute('type', 'customers');
+
+        $sources = $customers->addChild('sources');
+        $source = $sources->addChild('source');
+        $source->addAttribute('id', self::CUSTOMERS);
+        $source->addAttribute('type', 'item_data_file');
+        $source->addChild('file')->addAttribute('value', self::CUSTOMERS_CSV);
+        $source->addChild('itemIdColumn')->addAttribute('value', 'customer_id');
+        $this->appendXmlOptions($source);
+
+        $properties = $customers->addChild('properties');
+        foreach ($headers as $prop) {
+            $type = 'string';
+            $column = $prop;
+            switch($prop) {
+                case 'id':
+                    $type = 'id';
+                    break;
+                case 'dob':
+                    $type = 'date';
+                    break;
+            }
+
+            $property = $properties->addChild('property');
+            $property->addAttribute('id', $prop);
+            $property->addAttribute('type', $type);
+
+            $transform = $property->addChild('transform');
+            $logic = $transform->addChild('logic');
+            $logic->addAttribute('source', 'customer_vals');
+            $logic->addAttribute('type', 'direct');
+            $logic->addChild('field')->addAttribute('column', $column);
+            $property->addChild('params');
+        }
+
+        $db = $this->db;
+
+        // get all customers
+        $sql = $db->select()
+                  ->from(
+                    array('u' => 's_user'),
+                    array('id')
+                  )
+                  ->joinLeft(
+                    array('b' => 's_user_billingaddress'),
+                    $this->qi('b.userID') . ' = ' . $this->qi('u.id'),
+                    array(
+                        'public_id' => 'customernumber',
+                        'zip' => 'zipcode',
+                        'dob' => 'birthday',
+                        'gender' => 'salutation',
+                    )
+                  )
+                  ->joinLeft(
+                    array('c' => 's_core_countries'),
+                    $this->qi('c.id') . ' = ' . $this->qi('b.countryID'),
+                    array('country' => 'countryiso')
+                  )
+                  ->joinLeft(
+                    array('l' => 's_core_locales'),
+                    $this->qi('l.id') . ' = ' . $this->qi('u.language'),
+                    array('language' => 'locale')
+                  );
+
+        if ($should_export_email) {
+            $sql->columns('email', 'u');
+        }
+
+        // prepare file & stream results into it
+        $file_name = $this->dirPath . self::CUSTOMERS_CSV;
+        $this->openFile($file_name);
+        sort($headers);
+        $this->addRowToFile($headers);
+
+        $stmt = $db->query($sql);
+        while ($row = $stmt->fetch()) {
+            $row['customer_id'] = $row['id'];
+            ksort($row);
+            $this->addRowToFile($row);
+        }
+        $this->closeFile();
+
+        return $file_name;
+    }
+
+    /**
+     * @return string
+     */
+    protected function getTransactions() {
+        // prepare XML configuration
+        $containers = $this->xml->xpath('//containers');
+        $containers = $containers[0];
+        $transactions = $containers->addChild('container');
+        $transactions->addAttribute('id', 'transactions');
+        $transactions->addAttribute('type', 'transactions');
+
+        $sources = $transactions->addChild('sources');
+        $source = $sources->addChild('source');
+        $source->addAttribute('id', self::TRANSACTIONS);
+        $source->addAttribute('type', 'transactions');
+
+        $source->addChild('file')->addAttribute('value', self::TRANSACTIONS_CSV);
+        $source->addChild('orderIdColumn')->addAttribute('value', 'order_id');
+        $customerIdColumn = $source->addChild('customerIdColumn');
+        $customerIdColumn->addAttribute('value', 'customer_id');
+        $customerIdColumn->addAttribute('customer_property_id', 'customer_id');
+        $productIdColumn = $source->addChild('productIdColumn');
+        $productIdColumn->addAttribute('value', 'product_id');
+        $productIdColumn->addAttribute('product_property_id', 'ordernumber');
+        $source->addChild('productListPriceColumn')->addAttribute('value', 'price');
+        $source->addChild('productDiscountedPriceColumn')->addAttribute('value', 'discounted_price');
+        $source->addChild('totalOrderValueColumn')->addAttribute('value', 'total_order_value');
+        $source->addChild('shippingCostsColumn')->addAttribute('value', 'shipping_costs');
+        $source->addChild('orderReceptionDateColumn')->addAttribute('value', 'order_date');
+        $source->addChild('orderConfirmationDateColumn')->addAttribute('value', 'confirmation_date');
+        $source->addChild('orderShippingDateColumn')->addAttribute('value', 'shipping_date');
+        $source->addChild('orderStatusColumn')->addAttribute('value', 'status');
+
+        $this->appendXmlOptions($source);
+
+        $db = $this->db;
+
+        // get all transactions
+        $quoted2 = $db->quote(2);
+        $oInvoiceAmount = $this->qi('o.invoice_amount');
+        $oInvoiceShipping = $this->qi('o.invoice_shipping');
+        $oCurrencyFactor = $this->qi('o.currencyFactor');
+        $dPrice = $this->qi('d.price');
+        $sql = $db->select()
+                  ->from(
+                    array('o' => 's_order'),
+                    array(
+                        'order_id' => 'ordernumber',
+                        'customer_id' => 'userID',
+                        'total_order_value' => new Zend_Db_Expr(
+                            "ROUND($oInvoiceAmount * $oCurrencyFactor, $quoted2)"
+                        ),
+                        'shipping_costs' => new Zend_Db_Expr(
+                            "ROUND($oInvoiceShipping * $oCurrencyFactor, $quoted2)"
+                        ),
+                        'order_date' => 'ordertime',
+                        'confirmation_date' => 'cleareddate',
+                        'status' => 'status',
+                    )
+                  )
+                  ->join(
+                    array('d' => 's_order_details'),
+                    $this->qi('d.orderID') . ' = ' . $this->qi('o.id'),
+                    array(
+                        'product_id' => 'articleID',
+                        'price' => new Zend_Db_Expr(
+                            "ROUND($dPrice * $oCurrencyFactor, $quoted2)"
+                        ),
+                        'shipping_date' => 'releasedate',
+                        'quantity' => 'quantity',
+                    )
+                  );
+
+        // transactions are always incremental, except by configuration overide
+        if ((bool) Shopware()->Config()->get('boxalino_transaction_style')) {
+            $sql->where($this->qi('o.ordertime') . ' >= ?', $this->getLastDelta());
+        }
+
+        // prepare file & stream results into it
+        $file_name = $this->dirPath . self::TRANSACTIONS_CSV;
+        $this->openFile($file_name);
+
+        $headers = array(
+            'order_id',
+            'customer_id',
+            'product_id',
+            'price',
+            'discounted_price',
+            'quantity',
+            'total_order_value',
+            'shipping_costs',
+            'order_date',
+            'confirmation_date',
+            'shipping_date',
+            'status',
+        );
+        sort($headers);
+        $this->addRowToFile($headers);
+
+        $stmt = $db->query($sql);
+        while ($row = $stmt->fetch()) {
+            // @note list price at the time of the order is not stored, only the final price
+            $row['discounted_price'] = $row['price'];
+            ksort($row);
+            $this->addRowToFile($row);
+        }
+        $this->closeFile();
+
+        return $file_name;
+    }
+
+    protected function openFile($fileName)
+    {
+        @unlink($fileName);
+        return $this->fileHandle = fopen($fileName, 'a');
+    }
+
+    protected function addRowToFile($row)
+    {
+        return fputcsv($this->fileHandle, $row, self::XML_DELIMITER, self::XML_ENCLOSURE);
+    }
+
+    protected function closeFile()
+    {
+        return fclose($this->fileHandle);
+    }
+
+    /**
+     * @param array $row
+     * @param array $languages
+     * @param array $translationFields
+     * @return array
+     */
+    protected function prepareArticleRow($row, $languages, $translationFields)
+    {
+        if (empty($row['configuratorsetID'])) {
+            $row['mainnumber'] = '';
+            $row['additionaltext'] = '';
+        }
+
+        if (!empty($row['categories'])) {
+            $categorypaths = array();
+            $categories = explode('|', $row['categories']);
+            foreach ($categories as $category) {
+                $categorypath = $this->getCategoryPath($category);
+
+                if (!empty($categorypath)) {
+                    $categorypaths[] = $categorypath;
+                }
+            }
+            $row['categorypaths'] = implode("\r\n",$categorypaths);
+        }
+
+        $shopLanguages = $this->getLocales();
+
+        if (!empty($languages)) {
+            foreach ($languages as $language) {
+                if (!empty($row['article_translation_' . $shopLanguages[$language]['locale']])) {
+                    $objectdata = unserialize($row['article_translation_' . $shopLanguages[$language]['locale']]);
+                } elseif (!empty($row['detail_translation_' . $shopLanguages[$language]['locale']])) {
+                    $objectdata = unserialize($row['detail_translation_' . $shopLanguages[$language]['locale']]);
+                } else {
+                    continue;
+                }
+
+                if (!empty($objectdata)) {
+                    foreach ($objectdata as $key=>$value) {
+                        if (isset($translationFields[$key])) {
+                            $row[$translationFields[$key] . '_' . $shopLanguages[$language]['locale']] = $value;
+                        }
+                    }
+                }
+            }
+
+            foreach ($languages as $language) {
+                unset($row['article_translation_'.$language]);
+                unset($row['detail_translation_'.$language]);
+            }
+        }
+
+        return $row;
+    }
+
+    /**
+     * Returns the category path for the given category id
+     *
+     * @param int $id
+     * @return string
+     */
+    protected function getCategoryPath($id)
+    {
+        $repository = $this->getManager()->getRepository('Shopware\Models\Category\Category');
+
+        $path = $repository->getPathById($id, 'name');
+        unset($path[0]);
+        $path = implode($path, '|');
+
+        return $path;
+    }
+
+    /**
+     * @return Doctrine\ORM\Mapping\ClassMetadataFactory
+     */
+    protected function getClassMetadataFactoryName()
+    {
+        if (!isset($this->_attributes['classMetadataFactoryName'])) {
+            $this->_attributes['classMetadataFactoryName'] = '\Doctrine\ORM\Mapping\ClassMetadataFactory';
+        }
+
+        return $this->_attributes['classMetadataFactoryName'];
+    }
+
+    /**
+     * @return \Shopware\Components\Model\ModelManager
+     */
+    protected function getEntityManager()
+    {
+        return Shopware()->Models();
+    }
+
+    /**
+     * @return Enlight_Controller_Request_RequestHttp
+     */
+    protected function Request()
+    {
+        return $this->request;
+    }
+
+    /**
+     * @return \Shopware\Components\Model\ModelManager
+     */
+    protected function getManager()
+    {
+        if ($this->manager === null) {
+            $this->manager = Shopware()->Models();
+        }
+        return $this->manager;
+    }
+
+    /**
+     * @return string[]
+     */
+    protected function getLocales() {
+        $db = $this->db;
+        $sql = $db->select()
+                  ->from(
+                    array('s' => 's_core_shops'),
+                    array('shop_id' => 'id')
+                  )
+                  ->join(
+                    array('l' => 's_core_locales'),
+                    'l.id = s.locale_id',
+                    array('locale' => 'locale', 'locale_id' => 'id')
+                  )
+                  ->order('s.default DESC');
+        $result = array();
+        foreach ($db->fetchAll($sql) as $l) {
+            $position = strpos($l['locale'], '_');
+            if ($position !== false)
+                $l['locale'] = substr($l['locale'], 0, $position);
+            $result[$l['shop_id']] = $l;
+        }
+        return $result;
+    }
+
+    /**
+     * @return string[]
+     */
+    protected function getDefaultLocale() {
+        $result = $this->getLocales();
+        return current($result);
+    }
+
+    /**
+     * @return string
+     */
+    protected function getLastDelta() {
+        if (empty($this->deltaLast)) {
+            $this->deltaLast = '1950-01-01 12:00:00';
+
+            $db = $this->db;
+            $sql = $db->select()
+                      ->from('exports', array('export_date'))
+                      ->limit(1);
+            $stmt = $db->query($sql);
+            if ($stmt->rowCount() > 0) {
+                $row = $stmt->fetch();
+                $this->deltaLast = $row['export_date'];
+            }
+        }
+        return $this->deltaLast;
+    }
+
+    /**
+     * wrapper to quote database identifiers
+     *
+     * @param  string $identifier
+     * @return string
+     */
+    protected function qi($identifier) {
+        return $this->db->quoteIdentifier($identifier);
+    }
+
+    protected function startXml()
+    {
+        $this->xml = new SimpleXMLElement('<root/>');
+        $languages = $this->xml->addChild('languages');
+
+        foreach ($this->getLocales() as $lang) {
+            $language = $languages->addChild('language');
+            $language->addAttribute('id', $lang['locale']);
+        }
+
+        $containers = $this->xml->addChild('containers');
+//        $containers = $xml->xpath('//containers')[0];
+        $productsContainer = $containers->addChild('container');
+        $productsContainer->addAttribute('id', 'products');
+        $productsContainer->addAttribute('type', 'products');
+
+        $sources = $productsContainer->addChild('sources');
+        $properties = $productsContainer->addChild('properties');
+    }
+
+    protected function appendXmlOptions(SimpleXMLElement &$xml)
+    {
+        $xml->addChild('format')->addAttribute('value', self::XML_FORMAT);
+        $xml->addChild('encoding')->addAttribute('value', self::XML_ENCODE);
+        $xml->addChild('delimiter')->addAttribute('value', self::XML_DELIMITER);
+        $xml->addChild('enclosure')->addAttribute('value', self::XML_ENCLOSURE);
+        $xml->addChild('escape')->addAttribute('value', self::XML_ESCAPE);
+        $xml->addChild('lineSeparator')->addAttribute('value', self::XML_NEWLINE);
+    }
+
+    protected function finishAndGetXml()
+    {
+        $properties = $this->xml->xpath('//properties');
+        $properties = $properties[0];
+
+        foreach ($this->propertyDescriptions as $data) {
+            $itemFields = $data['fields'];
+            foreach ($itemFields as $key => $fieldDesc) {
+                if (is_string($fieldDesc)) {
+                    $fieldDesc = array(
+                        'name' => $fieldDesc,
+                        'type' => 'string'
+                    );
+                } else {
+                    $fieldDesc['name'] = $key;
+                }
+                if (!isset($fieldDesc['type']))
+                    $fieldDesc['type'] = 'string';
+                if (!isset($fieldDesc['logical_type']))
+                    $fieldDesc['logical_type'] = 'direct';
+                if (!isset($fieldDesc['column']))
+                    $fieldDesc['column'] = $fieldDesc['name'];
+                if (!isset($fieldDesc['params']))
+                    $fieldDesc['params'] = array();
+
+                $prop = $properties->addChild('property');
+
+                $prop->addAttribute('id', $fieldDesc['name']);
+                $prop->addAttribute('type', $fieldDesc['type']);
+                $transform = $prop->addChild('transform');
+                $logic = $transform->addChild('logic');
+                $logic->addAttribute('source', $data['source']);
+                $logic->addAttribute('type', $fieldDesc['logical_type']);
+                if (in_array($fieldDesc['type'], array('title', 'body', 'text'))) {
+                    foreach ($this->getLocales() as $lang) {
+                        $field = $logic->addChild('field');
+                        $field->addAttribute('language', $lang['locale']);
+                        $field->addAttribute('column', $fieldDesc['column'] . '_' . $lang['locale']);
+                    }
+                } else {
+                    $field = $logic->addChild('field');
+                    $field->addAttribute('column', $fieldDesc['column']);
+                }
+                $params = $prop->addChild('params');
+                foreach($fieldDesc['params'] as $paramKey => $paramData) {
+                    $param = $params->addChild($paramKey);
+                    foreach($paramData as $k => $v)
+                        $param->addAttribute($k, $v);
+                }
+            }
+        }
+
+        return $this->xml->asXML();
+    }
+}
