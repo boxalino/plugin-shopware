@@ -286,6 +286,7 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
             // Setup main choice inquiry object
             $inquiry = new \com\boxalino\p13n\api\thrift\ChoiceInquiry();
             $inquiry->choiceId = $choiceId;
+            $inquiry->minHitCount = $count;
 
             // Connect search query to the inquiry
             $inquiry->simpleSearchQuery = $searchQuery;
