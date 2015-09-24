@@ -28,6 +28,7 @@ To add/substitute another recommendation widget:
 2. Use existing classes, i.e. *Shopware_Plugins_Frontend_Boxalino_FrontendInterceptor* to intercept the page before it is fully rendered. There you can modify displayed data. Choosing which class to use depends on namespace of intercepted action (frontend or widget).
 3. Methods Shopware_Plugins_Frontend_Boxalino_P13NHelper::findRecommendations and Shopware_Plugins_Frontend_Boxalino_GenericRecommendations::getArticlesForChoice returns an array of items found in p13n. You can bind them in the interceptor to view variables used in you recommendation widget like this:
 
+
     $view->items = Shopware_Plugins_Frontend_Boxalino_P13NHelper::instance()->findRecommendations(articleID, role, boxalino_widget_id, results_count);
 
 or
@@ -60,13 +61,13 @@ after refreshing, I can see on the bottom of item detail page this:
       'sArticle' => string '19' (length=2)
       'controller' => string 'detail' (length=6)
 
-> **AJAX may complicate things**
-> 
-> Sometimes you may be replacing content returned by AJAX. The _var_dump_ is still useful for getting controller name, however the output may be visible only in page inspector (or Firebug). You may have to check "Network" section and look at the response. It may also include some HTML formatting making it harder to read but the date should be there.
-
 This output tells me that the page was rendered by controller _detail_. The action is not specified so it must have been _index_. And because this came from _onFrontend_ I know, that the package I need to look into is called _Frontend_. I also note that _sArticle_ contains the id of displayed item.
 
 This leads me to file _/engine/Shopware/Controllers/Frontend/Detail.php_ with class _Shopware_Controllers_Frontend_Detail_ and method _indexAction_. I should now comment back lines which gave me this information.
+
+> **AJAX may complicate things**
+> 
+> Sometimes you may be replacing content returned by AJAX. The _var_dump_ is still useful for getting controller name, however the output may be visible only in page inspector (or Firebug). You may have to check "Network" section and look at the response. It may also include some HTML formatting making it harder to read but the date should be there.
 
 ##### Template
 
@@ -88,6 +89,7 @@ Finally, in file _/templates/_default/frontend/detail/related.tpl_ is the line I
 This is the actual loop that shows similar items. I can see that it works on property _sRelatedArticles_ of object _sArticle_. This is the item and property I will have to modify. It's high time I commented out the code from first point.
 
 > **Difficulties while browsing the code**
+> 
 > Unfortunately, you may often have to guess which variable is responsible for what. Sometimes, there's more then one object that needs to be modified. For example, both _$sCrossSimilarShown_ and _$sCrossBoughtToo_ are responsible for showing similar items when adding to cart.
 
 #### Intercepting and feeding data
