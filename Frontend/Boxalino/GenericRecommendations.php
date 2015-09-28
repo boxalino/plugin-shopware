@@ -47,6 +47,6 @@ class Shopware_Plugins_Frontend_Boxalino_GenericRecommendations
             $id, 'mainProduct', $choiceIds, $amount, $context
         );
         if (is_array($choiceId)) return $result;
-        return $result[$choiceId];
+        return current($result);
     }
 }
