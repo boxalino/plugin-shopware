@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__ . '/lib/vendor/Thrift/ClassLoader/ThriftClassLoader.php';
+require_once __DIR__ . '/lib/vendor/Thrift/HttpP13n.php';
 
 class Shopware_Plugins_Frontend_Boxalino_P13NHelper
 {
