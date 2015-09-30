@@ -41,7 +41,7 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
 
     public function getVersion()
     {
-        return '1.1.0';
+        return '1.1.1';
     }
 
     public function getInfo()
@@ -201,7 +201,9 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
 
     public function onBasket(Enlight_Event_EventArgs $arguments)
     {
-        return $this->frontendInterceptor->basket($arguments);
+        if (version_compare(Shopware::VERSION, '5.0.0', '>=')) {
+            return $this->frontendInterceptor->basket($arguments);
+        }
     }
 
     public function onAddToBasket(Enlight_Event_EventArgs $arguments)
