@@ -1405,8 +1405,9 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
             );
             $scopeConfig = new \Shopware_Components_Config($config);
 
+            $account = $scopeConfig->get('boxalino_account');
             $this->config[$id] = array(
-                'enabled'  => (bool) $scopeConfig->get('boxalino_export', false),
+                'enabled'  => (bool) $scopeConfig->get('boxalino_export', false) && strlen($account),
                 'account'  => $scopeConfig->get('boxalino_account'),
                 'username' => $scopeConfig->get('boxalino_form_username'),
                 'password' => $scopeConfig->get('boxalino_form_password'),
