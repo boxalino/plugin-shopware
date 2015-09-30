@@ -31,7 +31,7 @@ class Shopware_Plugins_Frontend_Boxalino_GenericRecommendations
      *
      * @param string|array $choiceId one choiceId of an array of multiple choiceIds
      * @param int $amount of products to recommend, defaults to 5
-     * @param array $context parameters to add to the request, i.e. array('contextItem' => 123), where 123 is the article detail id
+     * @param array $context parameters to add to the request, i.e. array('contextItem' => 123), where 123 is the article id (not the detail id)
      * @return array
      */
     public function getArticlesForChoice($choiceId, $amount = 5, $context = array())
