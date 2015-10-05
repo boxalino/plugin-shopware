@@ -1,5 +1,11 @@
 # changelog of the boxalino Shopware plugin
 
+## v1.1.2 Bugfixes for generic recommendations with context and Shopware 4
+* Adapting context format if required for generic recommendations
+* Disabling AJAX basket recommendations in shopware 4 due to compatibility issue
+* Ensuring that enabling the export in shops with insufficient configuration
+  doesn't interrupt exporter
+
 ## v1.1.1 Bugfixes for generic recommendations and translations
 * Fixing item context in generic recommendation
 * Changing the way translations and locales are connected, required for setups
