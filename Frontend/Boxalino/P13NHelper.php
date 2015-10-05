@@ -155,7 +155,7 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
             $choiceResponse = $p13n->choose($choiceRequest);
             $this->debug($choiceRequest, $choiceResponse);
         } catch (Exception $e) {
-            $this->debug($choiceRequest, $e);
+            $this->debug($choiceRequest, $e->getMessage());
             if ($this->isDebug()) {
                 exit;
             }
@@ -223,7 +223,7 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
             $choiceResponse = $p13n->autocomplete($autocompleteRequest);
             $this->debug($autocompleteRequest, $choiceResponse);
         } catch (Exception $e) {
-            $this->debug($autocompleteRequest, $e);
+            $this->debug($autocompleteRequest, $e->getMessage());
             if ($this->isDebug()) {
                 exit;
             }
@@ -255,6 +255,11 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
 
         // Add context parameters if given
         if (count($context)) {
+            foreach($context as $key => $value) {
+                if (!is_array($value)) {
+                    $context[$key] = array($value);
+                }
+            }
             $requestContext = new \com\boxalino\p13n\api\thrift\RequestContext();
             $requestContext->parameters = $context;
             $choiceRequest->requestContext = $requestContext;
@@ -303,7 +308,7 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
             $choiceResponse = $p13n->choose($choiceRequest);
             $this->debug($choiceRequest, $choiceResponse);
         } catch (Exception $e) {
-            $this->debug($choiceRequest, $e);
+            $this->debug($choiceRequest, $e->getMessage());
             if ($this->isDebug()) {
                 exit;
             }
