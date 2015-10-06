@@ -41,7 +41,7 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
 
     public function getVersion()
     {
-        return '1.1.2';
+        return '1.1.3';
     }
 
     public function getInfo()
@@ -74,10 +74,34 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
             $this->createDatabase();
             $this->registerCronJobs();
         } catch (Exception $e) {
-            return array(
-                'success' => false,
-                'message' => $e->getMessage()
-            );
+            Shopware()->Log()->Err('Plugin install error: '. $e->getMessage());
+            return false;
+        }
+        return true;
+    }
+
+    public function update($version)
+    {
+        $registerEvents = $createConfiguration = false;
+        switch($version) {
+            case '1.0':
+                $registerEvents = $createConfiguration = true;
+            case '1.1':
+            case '1.1.0':
+            case '1.1.1':
+            case '1.1.2':
+                // nothing to do (yet)
+                break;
+            default:
+                Shopware()->Log()->Err("Plugin update for version $version is not known, please contact the boxalino support.");
+                return false;
+        }
+        try {
+            if ($registerEvents) $this->registerEvents();
+            if ($createConfiguration) $this->createConfiguration();
+        } catch (Exception $e) {
+            Shopware()->Log()->Err('Plugin update error: '. $e->getMessage());
+            return false;
         }
         return true;
     }
@@ -87,10 +111,8 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
         try {
             $this->removeDatabase();
         } catch (Exception $e) {
-            return array(
-                'success' => false,
-                'message' => $e->getMessage()
-            );
+            Shopware()->Log()->Err('Plugin uninstall error: '. $e->getMessage());
+            return false;
         }
         return array('success' => true, 'invalidateCache' => array('frontend'));
     }
@@ -411,9 +433,9 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
             $parent = $this->Menu()->findOneBy('label', 'import/export');
             $this->createMenuItem(array('label' => 'Boxalino Export', 'class' => 'sprite-cards-stack', 'active' => 1,
                 'controller' => 'BoxalinoExport', 'action' => 'index', 'parent' => $parent));
-        } catch (Exception $exception) {
-            Shopware()->Log()->Err('can\'t create menu entry: ' . $exception->getMessage());
-            throw new Exception('can\'t create menu entry: ' . $exception->getMessage());
+        } catch (Exception $e) {
+            Shopware()->Log()->Err('can\'t create menu entry: ' . $e->getMessage());
+            throw new Exception('can\'t create menu entry: ' . $e->getMessage());
         }
     }
 }

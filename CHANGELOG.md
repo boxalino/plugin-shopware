@@ -1,5 +1,8 @@
 # changelog of the boxalino Shopware plugin
 
+## v1.1.3 Improving update functionality
+* Added update functionality to avoid errors on existing cronjobs
+
 ## v1.1.2 Bugfixes for generic recommendations with context and Shopware 4
 * Adapting context format if required for generic recommendations
 * Disabling AJAX basket recommendations in shopware 4 due to compatibility issue
