@@ -32,9 +32,10 @@ class Shopware_Plugins_Frontend_Boxalino_GenericRecommendations
      * @param string|array $choiceId one choiceId of an array of multiple choiceIds
      * @param int $amount of products to recommend, defaults to 5
      * @param array $context parameters to add to the request, i.e. array('contextItem' => 123), where 123 is the article id (not the detail id)
+     * @param int $offset to start result from, i.e. 5 to start with the 6th item (0 based index), defaults to 0
      * @return array
      */
-    public function getArticlesForChoice($choiceId, $amount = 5, $context = array())
+    public function getArticlesForChoice($choiceId, $amount = 5, $context = array(), $offset = 0)
     {
         $choiceIds = is_array($choiceId) ? $choiceId : array($choiceId);
         if (array_key_exists('contextItem', $context)) {
@@ -44,7 +45,7 @@ class Shopware_Plugins_Frontend_Boxalino_GenericRecommendations
             $id = 0;
         }
         $result = $this->helper->findRecommendations(
-            $id, 'mainProduct', $choiceIds, $amount, $context
+            $id, 'mainProduct', $choiceIds, $amount, $offset, $context
         );
         if (is_array($choiceId)) return $result;
         return current($result);

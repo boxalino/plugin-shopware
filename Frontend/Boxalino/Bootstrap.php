@@ -41,7 +41,7 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
 
     public function getVersion()
     {
-        return '1.1.3';
+        return '1.1.4';
     }
 
     public function getInfo()
@@ -90,6 +90,7 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
             case '1.1.0':
             case '1.1.1':
             case '1.1.2':
+            case '1.1.3':
                 // nothing to do (yet)
                 break;
             default:

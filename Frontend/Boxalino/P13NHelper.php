@@ -233,7 +233,7 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
         return $choiceResponse;
     }
 
-    public function findRawRecommendations($id, $role, $p13nChoiceId, $count = 5, $fieldName = 'products_group_id', $context = array())
+    public function findRawRecommendations($id, $role, $p13nChoiceId, $count = 5, $offset = 0, $fieldName = 'products_group_id', $context = array())
     {
         $p13nHost = $this->config->get('boxalino_host');
         $p13nAccount = $this->getAccount();
@@ -282,7 +282,7 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
         $searchQuery->indexId = $p13nAccount;
         $searchQuery->language = $p13nLanguage;
         $searchQuery->returnFields = $p13nFields;
-        $searchQuery->offset = 0;
+        $searchQuery->offset = $offset;
         $searchQuery->hitCount = $count;
         $searchQuery->groupBy = 'products_group_id';
 
@@ -318,7 +318,7 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
         return $choiceResponse;
     }
 
-    public function findRecommendations($id, $role, $p13nChoiceId, $count = 5, $context = array(), $fieldName = 'products_group_id') {
+    public function findRecommendations($id, $role, $p13nChoiceId, $count = 5, $offset = 0, $context = array(), $fieldName = 'products_group_id') {
         $results = $this->extractResults($this->findRawRecommendations($id, $role, $p13nChoiceId, $count, $fieldName, $context), $p13nChoiceId);
         if (is_array($p13nChoiceId)) {
             $articleResults = array();

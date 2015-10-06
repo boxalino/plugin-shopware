@@ -1,5 +1,8 @@
 # changelog of the boxalino Shopware plugin
 
+## v1.1.4 Support pagination in generic recommendations
+* Added optional parameter to offset the generic recommendations
+
 ## v1.1.3 Improving update functionality
 * Added update functionality to avoid errors on existing cronjobs
 
