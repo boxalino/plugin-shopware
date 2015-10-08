@@ -319,7 +319,7 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
     }
 
     public function findRecommendations($id, $role, $p13nChoiceId, $count = 5, $offset = 0, $context = array(), $fieldName = 'products_group_id') {
-        $results = $this->extractResults($this->findRawRecommendations($id, $role, $p13nChoiceId, $count, $fieldName, $context), $p13nChoiceId);
+        $results = $this->extractResults($this->findRawRecommendations($id, $role, $p13nChoiceId, $count, $offset, $fieldName, $context), $p13nChoiceId);
         if (is_array($p13nChoiceId)) {
             $articleResults = array();
             foreach ($results as $key => $result) {
