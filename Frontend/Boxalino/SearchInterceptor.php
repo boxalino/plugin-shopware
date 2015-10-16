@@ -54,13 +54,8 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
         $response = $this->Helper()->autocomplete($term, 0, $this->Helper()->getSearchLimit());
         $suggestions = $this->Helper()->getAutocompleteSuggestions($response);
 
-        $sResults = $this->get('legacy_struct_converter')->convertListProductStructList(
-            $this->get('shopware_storefront.list_product_service')->getList(
-                $this->Helper()->getAutocompletePreviewsearch($response),
-                $this->get('shopware_storefront.context_service')->getProductContext()
-            )
-        );
-        $router = Shopware()->Bootstrap()->getResource('Front')->Router();
+        $sResults = $this->getAjaxResult($response);
+        $router = Shopware()->Front()->Router();
         foreach ($sResults as $key => $result) {
             $sResults[$key]['name'] = $result['articleName'];
             $sResults[$key]['link'] = $router->assemble(array(
@@ -82,6 +77,21 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
             ),
         ));
         return false;
+    }
+
+    /**
+     * extract preview search result
+     * @param array $response
+     * @return array
+     */
+    public function getAjaxResult($response)
+    {
+        return $this->get('legacy_struct_converter')->convertListProductStructList(
+            $this->get('shopware_storefront.list_product_service')->getList(
+                $this->Helper()->getAutocompletePreviewsearch($response),
+                $this->get('shopware_storefront.context_service')->getProductContext()
+            )
+        );
     }
 
     /**

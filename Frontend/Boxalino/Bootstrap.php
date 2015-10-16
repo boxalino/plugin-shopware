@@ -145,7 +145,6 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
         );
     }
 
-
     public function onBoxalinoExportCronJob(Shopware_Components_Cron_CronJob $job)
     {
         return $this->runBoxalinoExportCronJob();

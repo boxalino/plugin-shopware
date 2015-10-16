@@ -127,7 +127,8 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
                         }
                         $searchQuery->facetRequests[] = new \com\boxalino\p13n\api\thrift\FacetRequest([
                             'fieldName' => "products_$field",
-                            'selectedValues' => $selectedValues
+                            'selectedValues' => $selectedValues,
+                            'andSelectedValues' => ($field == 'property_values')
                         ]);
                 }
             }
@@ -175,7 +176,7 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
 
         $p13nSearch = $text;
         $p13nLanguage = $this->getShortLocale();
-        $p13nFields = array('products_ordernumber');
+        $p13nFields = array('products_ordernumber', 'products_group_id');
 
 
         // Create basic P13n client
@@ -400,8 +401,9 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
 
     public function getLocalArticles($results)
     {
+        if (array_key_exists('results', $results)) $results = $results['results'];
         $articles = array();
-        foreach ($results['results'] as $p13nResult) {
+        foreach ($results as $p13nResult) {
             $id = intval($p13nResult['products_group_id']);
             $articleNew = Shopware()->Modules()->Articles()->sGetPromotionById('fix', 0, $id);
             if (!empty($articleNew['articleID'])) {
