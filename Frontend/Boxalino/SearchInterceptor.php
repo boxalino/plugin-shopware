@@ -65,14 +65,19 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
             ));
         }
 
-        $this->View()->loadTemplate('frontend/search/ajax.tpl');
-        $this->View()->addTemplateDir($this->Bootstrap()->Path() . 'Views/');
-        $this->View()->extendsTemplate('frontend/ajax.tpl');
+        if (version_compare(Shopware::VERSION, '5.0.0', '>=')) {
+            $this->View()->loadTemplate('frontend/search/ajax.tpl');
+            $this->View()->addTemplateDir($this->Bootstrap()->Path() . 'Views/');
+            $this->View()->extendsTemplate('frontend/ajax.tpl');
+        } else {
+            $this->View()->addTemplateDir($this->Bootstrap()->Path() . 'Views/');
+            $this->View()->loadTemplate('frontend/ajax4.tpl');
+        }
         $this->View()->assign(array(
             'sSearchRequest' => array('sSearch' => $term),
             'sSearchResults' => array(
                 'sResults' => $sResults,
-                'sArticlesCount' => $results['count'],
+                'sArticlesCount' => count($sResults),
                 'sSuggestions' => $suggestions,
             ),
         ));

@@ -44,80 +44,82 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor4
             $ids[] = intval($result['products_group_id']);
         }
 
-        $db = Shopware()->Db();
-        $aId = $db->quoteIdentifier('a.id');
-        $aName = $db->quoteIdentifier('a.name');
-        $atName = $db->quoteIdentifier('at.name');
-        $aDesc = $db->quoteIdentifier('a.description');
-        $atDesc = $db->quoteIdentifier('at.description');
-        $aDescLong = $db->quoteIdentifier('a.description_long');
-        $atDescLong = $db->quoteIdentifier('at.description_long');
-        $sql = $db->select()
-                  ->from(
-                        array('a' => 's_articles'),
-                        array(
-                            'articleID' => 'id',
-                        )
-                    )
-                    ->joinInner(
-                        array('ac' => 's_articles_categories_ro'),
-                        $db->quoteIdentifier('ac.articleID') . " = $aId",
-                        array()
-                    )
-                    ->joinInner(
-                        array('c' => 's_categories'),
-                        $db->quoteIdentifier('c.id') . ' = ' . $db->quoteIdentifier('ac.categoryID') .
-                        ' AND ' . $db->quoteIdentifier('c.active') . ' = 1',
-                        array()
-                    )
-                    ->joinLeft(
-                        array('ai' => 's_articles_img'),
-                        $db->quoteIdentifier('ai.articleID') . " = $aId AND " .
-                        $db->quoteIdentifier('ai.main') . ' = 1 AND ' .
-                        $db->quoteIdentifier('ai.article_detail_id') . ' IS NULL',
-                        array(
-                            'image' => 'img',
-                            'mediaId' => 'media_id',
-                        )
-                    )
-                    ->joinLeft(
-                        array('at' => 's_articles_translations'),
-                        $db->quoteIdentifier('at.articleID') . " = $aId",
-                        array(
-                            'name' => new Zend_Db_Expr(
-                                "IF($atName IS NULL OR $atName = '', $aName, $atName)"
-                            ),
-                            'description' => new Zend_Db_Expr(
-                                "IF($atDescLong IS NULL OR $atDescLong = '', IF(TRIM($aDesc) != '', $aDesc, $aDescLong), IF(TRIM($atDesc) = '', $atDescLong, $atDesc))"
-                            ),
-                        )
-                    )
-                    ->where($db->quoteIdentifier('a.active') . ' = ?', 1)
-                    ->where("$aId IN (?)", $ids);
-
-        $unordered_results = $db->fetchAll($sql);
         $results = array();
-        $basePath = $this->Request()->getScheme() . '://' . $this->Request()->getHttpHost() . $this->Request()->getBasePath();
-        if (!empty($unordered_results)) {
-            $models = Shopware()->Models();
-            $router = Shopware()->Front()->Router();
-            foreach ($ids as $id) {
-                foreach ($unordered_results as $key => &$result) {
-                    if ($result['articleID'] == $id) {
-                        if (empty($result['type'])) $result['type'] = 'article';
-                        if (!empty($result['mediaId'])) {
-                            /** @var $mediaModel \Shopware\Models\Media\Media */
-                            $mediaModel = $models->find('Shopware\Models\Media\Media', $result['mediaId']);
-                            if ($mediaModel != null) {
-                                $result['thumbNails'] = array_values($mediaModel->getThumbnails());
-                                $result['image'] = $result['thumbNails'][1];
-                            }
-                        }
-                        $result['link'] = $router->assemble(array('controller' => 'detail', 'sArticle' => $result['articleID'], 'title' => $result['name']));
+        if (count($ids)) {
+            $db = Shopware()->Db();
+            $aId = $db->quoteIdentifier('a.id');
+            $aName = $db->quoteIdentifier('a.name');
+            $atName = $db->quoteIdentifier('at.name');
+            $aDesc = $db->quoteIdentifier('a.description');
+            $atDesc = $db->quoteIdentifier('at.description');
+            $aDescLong = $db->quoteIdentifier('a.description_long');
+            $atDescLong = $db->quoteIdentifier('at.description_long');
+            $sql = $db->select()
+                      ->from(
+                            array('a' => 's_articles'),
+                            array(
+                                'articleID' => 'id',
+                            )
+                        )
+                        ->joinInner(
+                            array('ac' => 's_articles_categories_ro'),
+                            $db->quoteIdentifier('ac.articleID') . " = $aId",
+                            array()
+                        )
+                        ->joinInner(
+                            array('c' => 's_categories'),
+                            $db->quoteIdentifier('c.id') . ' = ' . $db->quoteIdentifier('ac.categoryID') .
+                            ' AND ' . $db->quoteIdentifier('c.active') . ' = 1',
+                            array()
+                        )
+                        ->joinLeft(
+                            array('ai' => 's_articles_img'),
+                            $db->quoteIdentifier('ai.articleID') . " = $aId AND " .
+                            $db->quoteIdentifier('ai.main') . ' = 1 AND ' .
+                            $db->quoteIdentifier('ai.article_detail_id') . ' IS NULL',
+                            array(
+                                'image' => 'img',
+                                'mediaId' => 'media_id',
+                            )
+                        )
+                        ->joinLeft(
+                            array('at' => 's_articles_translations'),
+                            $db->quoteIdentifier('at.articleID') . " = $aId",
+                            array(
+                                'articleName' => new Zend_Db_Expr(
+                                    "IF($atName IS NULL OR $atName = '', $aName, $atName)"
+                                ),
+                                'description' => new Zend_Db_Expr(
+                                    "IF($atDescLong IS NULL OR $atDescLong = '', IF(TRIM($aDesc) != '', $aDesc, $aDescLong), IF(TRIM($atDesc) = '', $atDescLong, $atDesc))"
+                                ),
+                            )
+                        )
+                        ->where($db->quoteIdentifier('a.active') . ' = ?', 1)
+                        ->where("$aId IN (?)", $ids);
 
-                        $results[] = $result;
-                        unset($unordered_results[$key]);
-                        break;
+            $unordered_results = $db->fetchAll($sql);
+            $basePath = $this->Request()->getScheme() . '://' . $this->Request()->getHttpHost() . $this->Request()->getBasePath();
+            if (!empty($unordered_results)) {
+                $models = Shopware()->Models();
+                $router = Shopware()->Front()->Router();
+                foreach ($ids as $id) {
+                    foreach ($unordered_results as $key => &$result) {
+                        if ($result['articleID'] == $id) {
+                            if (empty($result['type'])) $result['type'] = 'article';
+                            if (!empty($result['mediaId'])) {
+                                /** @var $mediaModel \Shopware\Models\Media\Media */
+                                $mediaModel = $models->find('Shopware\Models\Media\Media', $result['mediaId']);
+                                if ($mediaModel != null) {
+                                    $result['thumbNails'] = array_values($mediaModel->getThumbnails());
+                                    $result['image'] = $result['thumbNails'][1];
+                                }
+                            }
+                            $result['link'] = $router->assemble(array('controller' => 'detail', 'sArticle' => $result['articleID'], 'title' => $result['name']));
+
+                            $results[] = $result;
+                            unset($unordered_results[$key]);
+                            break;
+                        }
                     }
                 }
             }
