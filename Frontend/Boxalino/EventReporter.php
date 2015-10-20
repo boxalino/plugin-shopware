@@ -110,6 +110,7 @@ SCRIPT;
             't'  => $totalPrice,
             'c'  => $currency,
             'n'  => $productsCount,
+            'orderId' => $orderId,
         );
         for ($i = 0; $i < $productsCount; ++$i) {
             $params['id' . $i] = $products[$i]['product'];
