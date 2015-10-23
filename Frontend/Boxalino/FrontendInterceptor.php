@@ -24,9 +24,9 @@ class Shopware_Plugins_Frontend_Boxalino_FrontendInterceptor
         switch ($this->Request()->getParam('controller')) {
             case 'detail':
                 $id = trim(strip_tags(htmlspecialchars_decode(stripslashes($this->Request()->sArticle))));
+                $sArticle = $this->View()->sArticle;
                 if($this->Config()->get('boxalino_product_recommendation_enabled')) {
                     // Replace similar & related products, if choice IDs given
-                    $sArticle = $this->View()->sArticle;
                     $choiceIds = array();
                     foreach ($this->_productRecommendations as $configOption) {
                         $choiceId = $this->Config()->get($configOption);
