@@ -1,5 +1,9 @@
 # changelog of the boxalino Shopware plugin
 
+## v1.1.5 Shopware 4 autocompletion suggestions and transaction improvements
+* Backported boxalino autocompletion suggestions for Shopware 4
+* improved transaction tracking and export
+
 ## v1.1.4 Support pagination in generic recommendations
 * Added optional parameter to offset the generic recommendations
 
