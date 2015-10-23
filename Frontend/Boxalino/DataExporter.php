@@ -1219,7 +1219,7 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
         $customerIdColumn->addAttribute('customer_property_id', 'customer_id');
         $productIdColumn = $source->addChild('productIdColumn');
         $productIdColumn->addAttribute('value', 'product_id');
-        $productIdColumn->addAttribute('product_property_id', 'products_group_id');
+        $productIdColumn->addAttribute('product_property_id', 'group_id');
         $source->addChild('productListPriceColumn')->addAttribute('value', 'price');
         $source->addChild('productDiscountedPriceColumn')->addAttribute('value', 'discounted_price');
         $source->addChild('totalOrderValueColumn')->addAttribute('value', 'total_order_value');
