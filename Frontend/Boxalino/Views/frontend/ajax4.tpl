@@ -8,8 +8,8 @@
 		<ul class="searchresult">
 		{foreach $sSearchResults.sSuggestions as $suggestion}
 			<li class="searchresult">
-				<div class="searchthumb"></div>
-				<div class="searchinner">
+				<div class="searchthumb" style="height:1em"></div>
+				<div class="searchinner" style="height:1em">
 					<a href="{url controller='search' sSearch=$suggestion.text}" class="resultlink">
 						{$suggestion.html} ({$suggestion.hits})
 					</a>
