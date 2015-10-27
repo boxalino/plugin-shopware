@@ -1,5 +1,9 @@
 # changelog of the boxalino Shopware plugin
 
+## v1.1.6 Shopware 4 autocompletion design optimizations
+* improved design of autocompletion suggestions in Shopware 4
+* removed minimum search term length limitations
+
 ## v1.1.5 Shopware 4 autocompletion suggestions and transaction improvements
 * Backported boxalino autocompletion suggestions for Shopware 4
 * improved transaction tracking and export
