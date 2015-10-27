@@ -47,7 +47,7 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
         Enlight()->Plugins()->Controller()->Json()->setPadding();
 
         $term = $this->getSearchTerm();
-        if (empty($term) || strlen($term) < $this->Config()->MinSearchLenght) {
+        if (empty($term)) {
             return false;
         }
 
@@ -119,99 +119,95 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
             return $this->Controller()->redirect($location);
         }
 
-        // Check if search term met minimum length
-        if (strlen($term) >= (int) $this->Config()->sMINSEARCHLENGHT) {
+        /* @var ProductContextInterface $context */
+        $context  = $this->get('shopware_storefront.context_service')->getProductContext();
+        /* @var Shopware\Bundle\SearchBundle\Criteria $criteria */
+        $criteria = $this->get('shopware_search.store_front_criteria_factory')
+                         ->createSearchCriteria($this->Request(), $context);
+        $facets = $this->createFacets($criteria, $context);
 
-            /* @var ProductContextInterface $context */
-            $context  = $this->get('shopware_storefront.context_service')->getProductContext();
-            /* @var Shopware\Bundle\SearchBundle\Criteria $criteria */
-            $criteria = $this->get('shopware_search.store_front_criteria_factory')
-                             ->createSearchCriteria($this->Request(), $context);
-            $facets = $this->createFacets($criteria, $context);
+        $options = $this->getOptionsFromFacets($facets);
+        $options['sort'] = $this->getSortOrder($criteria);
 
-            $options = $this->getOptionsFromFacets($facets);
-            $options['sort'] = $this->getSortOrder($criteria);
+        $config = $this->get('config');
+        $pageCounts = array_values(explode('|', $config->get('fuzzySearchSelectPerPage')));
+        $pageCount = $criteria->getLimit();
+        $pageOffset = $criteria->getOffset();
 
-            $config = $this->get('config');
-            $pageCounts = array_values(explode('|', $config->get('fuzzySearchSelectPerPage')));
-            $pageCount = $criteria->getLimit();
-            $pageOffset = $criteria->getOffset();
+        $response = $this->Helper()->search(
+            $term, $pageOffset, $pageCount, $options
+        );
+        $results = $this->Helper()->extractResults($response);
 
-            $response = $this->Helper()->search(
-                $term, $pageOffset, $pageCount, $options
-            );
-            $results = $this->Helper()->extractResults($response);
-
-            // decide if original result is shown or one of the relaxations
-            // (the one with the largest hit count)
-            $didYouMean = array();
-            if (
-                ($amount = $config->get('boxalino_search_subphrase_amount')) > 0 &&
-                $config->get('boxalino_search_subphrase_minimum') >= $results['count']
-            ) {
-                $count = $maxCount = 0;
-                $subphrases = $this->Helper()->getRelaxationSubphraseResults($response);
-                foreach ($subphrases as $subphrase) {
-                    if (++$count > $amount) break;
-                    if ($subphrase['count'] >= $results['count'] && $subphrase['count'] >= $maxCount) {
-                        $results = $subphrase;
-                        $maxCount = $results['count'];
-                    }
-                    unset($subphrase['results']);
-                    $didYouMean[] = $subphrase;
+        // decide if original result is shown or one of the relaxations
+        // (the one with the largest hit count)
+        $didYouMean = array();
+        if (
+            ($amount = $config->get('boxalino_search_subphrase_amount')) > 0 &&
+            $config->get('boxalino_search_subphrase_minimum') >= $results['count']
+        ) {
+            $count = $maxCount = 0;
+            $subphrases = $this->Helper()->getRelaxationSubphraseResults($response);
+            foreach ($subphrases as $subphrase) {
+                if (++$count > $amount) break;
+                if ($subphrase['count'] >= $results['count'] && $subphrase['count'] >= $maxCount) {
+                    $results = $subphrase;
+                    $maxCount = $results['count'];
                 }
+                unset($subphrase['results']);
+                $didYouMean[] = $subphrase;
             }
-            if (
-                ($amount = $config->get('boxalino_search_suggestions_amount')) > 0 &&
-                ($config->get('boxalino_search_suggestions_minimum') >= $results['count'] ||
-                $config->get('boxalino_search_suggestions_maximum') <= $results['count'])
-            ) {
-                $count = $maxCount = 0;
-                $suggestions = $this->Helper()->getRelaxationSuggestions($response);
-                foreach ($suggestions as $suggestion) {
-                    if (++$count > $amount) break;
-                    if ($suggestion['count'] >= $results['count'] && $suggestion['count'] >= $maxCount) {
-                        $results = $suggestion;
-                        $maxCount = $results['count'];
-                    }
-                    unset($suggestion['results']);
-                    $didYouMean[] = $suggestion;
-                }
-            }
-
-            $facets = $this->updateFacetsWithResult($facets, $response);
-
-            // Get additional information for each search result
-            $articles = $this->Helper()->getLocalArticles($results);
-
-            $request = $this->Request();
-            $params = $request->getParams();
-            $params['sSearchOrginal'] = $term;
-
-            // Assign result to template
-            $this->View()->loadTemplate('frontend/search/fuzzy.tpl');
-            $this->View()->addTemplateDir($this->Bootstrap()->Path() . 'Views/');
-            $this->View()->extendsTemplate('frontend/relaxation.tpl');
-            $this->View()->assign(array(
-                'term' => $term,
-                'criteria' => $criteria,
-                'facets' => $facets,
-                'sPage' => $request->getParam('sPage', 1),
-                'sSort' => $request->getParam('sSort', 7),
-                'sTemplate' => $params['sTemplate'],
-                'sPerPage' => $pageCounts,
-                'sRequests' => $params,
-                'shortParameters' => $this->get('query_alias_mapper')->getQueryAliases(),
-                'pageSizes' => $pageCounts,
-                'ajaxCountUrlParams' => ['sCategory' => $context->getShop()->getCategory()->getId()],
-                'sSearchResults' => array(
-                    'sArticles' => $articles,
-                    'sArticlesCount' => $results['count'],
-                    'sSuggestions' => $didYouMean,
-                ),
-                'productBoxLayout' => $config->get('searchProductBoxLayout'),
-            ));
         }
+        if (
+            ($amount = $config->get('boxalino_search_suggestions_amount')) > 0 &&
+            ($config->get('boxalino_search_suggestions_minimum') >= $results['count'] ||
+            $config->get('boxalino_search_suggestions_maximum') <= $results['count'])
+        ) {
+            $count = $maxCount = 0;
+            $suggestions = $this->Helper()->getRelaxationSuggestions($response);
+            foreach ($suggestions as $suggestion) {
+                if (++$count > $amount) break;
+                if ($suggestion['count'] >= $results['count'] && $suggestion['count'] >= $maxCount) {
+                    $results = $suggestion;
+                    $maxCount = $results['count'];
+                }
+                unset($suggestion['results']);
+                $didYouMean[] = $suggestion;
+            }
+        }
+
+        $facets = $this->updateFacetsWithResult($facets, $response);
+
+        // Get additional information for each search result
+        $articles = $this->Helper()->getLocalArticles($results);
+
+        $request = $this->Request();
+        $params = $request->getParams();
+        $params['sSearchOrginal'] = $term;
+
+        // Assign result to template
+        $this->View()->loadTemplate('frontend/search/fuzzy.tpl');
+        $this->View()->addTemplateDir($this->Bootstrap()->Path() . 'Views/');
+        $this->View()->extendsTemplate('frontend/relaxation.tpl');
+        $this->View()->assign(array(
+            'term' => $term,
+            'criteria' => $criteria,
+            'facets' => $facets,
+            'sPage' => $request->getParam('sPage', 1),
+            'sSort' => $request->getParam('sSort', 7),
+            'sTemplate' => $params['sTemplate'],
+            'sPerPage' => $pageCounts,
+            'sRequests' => $params,
+            'shortParameters' => $this->get('query_alias_mapper')->getQueryAliases(),
+            'pageSizes' => $pageCounts,
+            'ajaxCountUrlParams' => ['sCategory' => $context->getShop()->getCategory()->getId()],
+            'sSearchResults' => array(
+                'sArticles' => $articles,
+                'sArticlesCount' => $results['count'],
+                'sSuggestions' => $didYouMean,
+            ),
+            'productBoxLayout' => $config->get('searchProductBoxLayout'),
+        ));
 
         return false;
     }

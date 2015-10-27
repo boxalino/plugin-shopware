@@ -6,16 +6,17 @@
 			<span class="result_number">({$sSearchResults.sArticlesCount} {s name='SearchAjaxInfoResults'}Treffer{/s})</span>
 		</a>
 		<ul class="searchresult">
-		{foreach $sSearchResults.sSuggestions as $suggestion}
+		{if count($sSearchResults.sSuggestions)}
 			<li class="searchresult">
-				<div class="searchthumb" style="height:1em"></div>
-				<div class="searchinner" style="height:1em">
-					<a href="{url controller='search' sSearch=$suggestion.text}" class="resultlink">
-						{$suggestion.html} ({$suggestion.hits})
-					</a>
-				</div>
+				{foreach $sSearchResults.sSuggestions as $suggestion}
+					<div class="searchinner" style="height:1em">
+						<a href="{url controller='search' sSearch=$suggestion.text}" class="resultlink">
+							{$suggestion.html} ({$suggestion.hits})
+						</a>
+					</div>
+				{/foreach}
 			</li>
-		{/foreach}
+		{/if}
 		{foreach $sSearchResults.sResults as $search_result}
 			<li class="searchresult">
 				{if $search_result.thumbNails.1}
