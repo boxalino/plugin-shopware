@@ -76,7 +76,7 @@ class Shopware_Plugins_Frontend_Boxalino_FrontendInterceptor
     public function basket(Enlight_Event_EventArgs $arguments)
     {
         if (!$this->Config()->get('boxalino_basket_recommendation_enabled')) {
-            return false;
+            return null;
         }
         $this->init($arguments);
 

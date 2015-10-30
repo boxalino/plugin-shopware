@@ -1003,25 +1003,44 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
             $quotedTableKey1 = $this->qi($tableKey1);
             $quotedTableKey2 = $this->qi($tableKey2);
             $quotedTableKey3 = $this->qi($tableKey3);
-            $quotedLanguage = $db->quote($allLocales[$shopId]['locale_id']);
-            $sql->joinLeft(
-                    array($tableKey1 => 's_core_multilanguage'),
-                    "$quotedTableKey1.$fieldLocale = $quotedLanguage",
-                    array()
-                )->joinLeft(
-                    array($tableKey2 => 's_core_translations'),
-                    "$quotedTableKey2.$fieldObjectKey = $acArticleId AND
-                    $quotedTableKey2.$fieldObjectType = $article AND
-                    $quotedTableKey2.$fieldObjectLanguage = $quotedTableKey1.$fieldIsoCode",
-                    array('article_translation_' . $locale => 'objectdata')
-                )
-                ->joinLeft(
-                    array($tableKey3 => 's_core_translations'),
-                    "$quotedTableKey3.$fieldObjectKey = $dId AND
-                    $quotedTableKey3.$fieldObjectType = $variant AND
-                    $quotedTableKey3.$fieldObjectLanguage = $quotedTableKey1.$fieldIsoCode",
-                    array('detail_translation_' . $locale => 'objectdata')
-                );
+
+            if (version_compare(Shopware::VERSION, '5.1.0', '>=')) {
+                $articleId = $this->qi('articleID');
+                $languageId = $this->qi('languageID');
+                $sql->joinLeft(
+                        array($tableKey2 => 's_articles_translations'),
+                        "$quotedTableKey2.$articleId = $acArticleId AND
+                        $quotedTableKey2.$languageId = $shopId",
+                        array(
+                            'name_' . $locale => 'name',
+                            'description_' . $locale => 'description',
+                            'description_long_' . $locale => 'description_long',
+                            'article_translation_' . $locale => new Zend_Db_Expr('NULL'),
+                            'detail_translation_' . $locale => new Zend_Db_Expr('NULL'),
+                        )
+                    );
+            } else {
+                $quotedLanguage = $db->quote($allLocales[$shopId]['locale_id']);
+                $sql->joinLeft(
+                        array($tableKey1 => 's_core_multilanguage'),
+                        "$quotedTableKey1.$fieldLocale = $quotedLanguage",
+                        array()
+                    )
+                    ->joinLeft(
+                        array($tableKey2 => 's_core_translations'),
+                        "$quotedTableKey2.$fieldObjectKey = $acArticleId AND
+                        $quotedTableKey2.$fieldObjectType = $article AND
+                        $quotedTableKey2.$fieldObjectLanguage = $quotedTableKey1.$fieldIsoCode",
+                        array('article_translation_' . $locale => 'objectdata')
+                    )
+                    ->joinLeft(
+                        array($tableKey3 => 's_core_translations'),
+                        "$quotedTableKey3.$fieldObjectKey = $dId AND
+                        $quotedTableKey3.$fieldObjectType = $variant AND
+                        $quotedTableKey3.$fieldObjectLanguage = $quotedTableKey1.$fieldIsoCode",
+                        array('detail_translation_' . $locale => 'objectdata')
+                    );
+            }
         }
         $stmt = $db->query($sql);
 
@@ -1042,7 +1061,9 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
 
             foreach ($locales as $locale) {
                 foreach ($this->translationFields as $key) {
-                    $row[$key . '_' . $locale] = '';
+                    if (!array_key_exists($key . '_' . $locale, $row)) {
+                        $row[$key . '_' . $locale] = '';
+                    }
                 }
 
                 $objectdata = null;
