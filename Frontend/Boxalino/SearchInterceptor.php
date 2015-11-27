@@ -415,9 +415,9 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
                     break;
                 case 'category':
                     $id = $label = null;
-                    if ($facet->isActive()) {
+					if (isset($_REQUEST['c'])) {
                         $value = $this->getLowestActiveTreeItem($facet->getValues());
-                        if ($value instanceof Shopware\Bundle\SearchBundle\FacetResult\TreeItem) {
+						if ($value instanceof Shopware\Bundle\SearchBundle\FacetResult\TreeItem) {
                             $id = $value->getId();
                             $label = $value->getLabel();
                         }
@@ -450,14 +450,14 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
     protected function getLowestActiveTreeItem($values)
     {
         foreach ($values as $value) {
+			$innerValues = $value->getValues();
+			if (count($innerValues)) {
+				$innerValue = $this->getLowestActiveTreeItem($innerValues);
+				if ($innerValue instanceof Shopware\Bundle\SearchBundle\FacetResult\TreeItem) {
+					return $innerValue;
+				}
+			}
             if ($value->isActive()) {
-                $innerValues = $value->getValues();
-                if (count($innerValues)) {
-                    $innerValue = $this->getLowestActiveTreeItem($innerValues);
-                    if ($innerValue instanceof Shopware\Bundle\SearchBundle\FacetResult\TreeItem) {
-                        return $innerValue;
-                    }
-                }
                 return $value;
             }
         }

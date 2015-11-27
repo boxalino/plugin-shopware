@@ -100,11 +100,13 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
                         continue 2;
                     case 'category':
                         $searchQuery->facetRequests[] = new \com\boxalino\p13n\api\thrift\FacetRequest([
-                            'fieldName' => 'categories',
+                            'fieldName' => 'category_id',
                             'selectedValues' => [new \com\boxalino\p13n\api\thrift\FacetValue([
-                                'hierarchyId' => $values,
-                                'hierarchy' => $options['categoryName']
+                                'stringValue' => (string) $values
                             ])]
+                        ]);
+						$searchQuery->facetRequests[] = new \com\boxalino\p13n\api\thrift\FacetRequest([
+                            'fieldName' => 'categories'
                         ]);
                         break;
                     case 'price':
