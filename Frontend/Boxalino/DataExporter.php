@@ -15,6 +15,8 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
     const ITEM_PROPERTIES_CSV = 'item_properties.csv';
     const ITEM_TRANSLATIONS = 'item_translations';
     const ITEM_TRANSLATIONS_CSV = 'item_translations.csv';
+	const ITEM_FACETVALUES = 'item_facet_values';
+    const ITEM_FACETVALUES_CSV = 'item_facet_values.csv';
     const CUSTOMERS = 'customer_vals';
     const CUSTOMERS_CSV = 'customers.csv';
     const TRANSACTIONS = 'transactions';
@@ -146,6 +148,7 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
             $zip->addFile($this->getTranslations($id), self::ITEM_TRANSLATIONS_CSV);
         }
         $zip->addFile($this->getCustomers($id), self::CUSTOMERS_CSV);
+		$zip->addFile($this->getFacetValues($id), self::ITEM_FACETVALUES_CSV);
         $zip->addFile($this->getTransactions($id), self::TRANSACTIONS_CSV);
         $zip->addFromString('properties.xml', $this->finishAndGetXml($id));
         $zip->close();
@@ -545,9 +548,11 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
             'length',
             'ean',
         );
+		
         foreach ($simpleFields as $key) {
             $fields[$key] = $key;
         }
+		
         $sql->join(
             array('d' => 's_articles_details'),
             $this->qi('d') . ".$fieldArticleId = $aId AND $dKind <> $quoted3",
@@ -861,6 +866,130 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
         return $file_name;
     }
 
+	
+	/*return string of the filter values, article ids and option ids*/
+	protected function getFacetValues($id)
+    {
+		// prepare XML configuration for "<source>" tag
+        $this->log->debug("start collecting filter values for shop id $id");
+        $this->propertyDescriptions[self::ITEM_FACETVALUES] = array(
+            'source' => self::ITEM_FACETVALUES,
+            'fields' => array()
+        );
+		
+        $sources = $this->xml->xpath('//sources');
+        $sources = $sources[0];
+        $source = $sources->addChild('source');
+        $source->addAttribute('type', 'item_data_file');
+        $source->addAttribute('id', self::ITEM_FACETVALUES);
+        $source->addChild('file')->addAttribute('value', self::ITEM_FACETVALUES_CSV);
+        $source->addChild('itemIdColumn')->addAttribute('value', 'item_id');
+        //$source->addChild('optionIdColumn')->addAttribute('value', 'option_id');
+		//$source->addChild('valueColumn')->addAttribute('value', 'value');
+        //locales
+		$this->appendXmlOptions($source);
+		$db = $this->db;
+		$sqlOptionID = $db->select()
+                  ->from(array('sFilVal' => 's_filter_values'), array('sFilVal.optionID'))
+				  ->group('sFilVal.optionID')
+				  ->order('sFilVal.optionID');
+	    $sqlCounterOptionID = $db->fetchAll($sqlOptionID);
+		
+		
+		
+		
+   
+		// prepare XML configuration for "<properties>" tag
+        $properties = $this->xml->xpath('//properties');
+        $properties = $properties[0];
+	    foreach ($sqlCounterOptionID as $columnName => $fields) {
+		
+        $property = $properties->addChild('property');
+        $property->addAttribute('id', 'optionID_' . $fields[optionID]);
+        $property->addAttribute('type', 'text');
+        $transform = $property->addChild('transform');
+        $logic = $transform->addChild('logic');
+        $logic->addAttribute('source', self::ITEM_FACETVALUES);
+        $logic->addAttribute('type', 'direct');
+		
+        $locales = $this->getShopLocales($id);
+        foreach($locales as $locale) {
+            $field = $logic->addChild('field');
+            $field->addAttribute('language', $locale);
+            $field->addAttribute('column', 'value_' . $locale);
+        }
+		
+        $forFieldParameter = $property->addChild('params');
+		$paramslogic = $forFieldParameter->addChild('fieldParameter');
+		$paramslogic->addAttribute('name', 'eligibility_condition');
+        $paramslogic->addAttribute('value', 'option_id=' . $fields[optionID]);
+		
+		
+		}
+	
+	
+	
+	
+		
+		
+		$sql = $db->select()
+                  ->from(array('t' => 's_core_translations'), array('t.objectlanguage', 't.objectKey', 't.objectdata'))
+				  ->where('t.objecttype = "propertyvalue"');
+		$stmt = $db->query($sql);
+		
+		
+		$localizedFacets = array();
+		while ($row = $stmt->fetch()) {
+        	if(!isset($localizedFacets[$row['objectlanguage']])) {
+				$localizedFacets[$row['objectlanguage']] = array();
+			}
+			$localizedFacets[$row['objectlanguage']][$row['objectKey']] = unserialize($row['objectdata']);
+		}
+
+	
+        // prepare queries
+        
+        $sql = $db->select()
+                  ->from(array('sFilVal' => 's_filter_values'), array('sArtDetail.id', 'sFilVal.optionID', 'sFilVal.value', 'sFilVal.id as fid'))
+				  ->order('sArtDetail.id ASC')
+				  ->join(array('sFilArt' => 's_filter_articles'), 'sFilVal.id = sFilArt.valueID')
+				  ->join(array('sArt' => 's_articles'), 'sArt.id = sFilArt.articleID')
+				  ->join(array('sArtDetail' => 's_articles_details'), 'sArtDetail.articleID = sArt.id');
+		$stmt = $db->query($sql);
+		
+        // prepare file & stream results into it
+        $file_name = $this->dirPath . self::ITEM_FACETVALUES_CSV;
+        $this->openFile($file_name);
+        $headers = array('item_id', 'option_id');
+		$locales = $this->getShopLocales($id);
+		
+		foreach($locales as $languageId => $languageLabel) {
+			$headers[] = 'value_' . $languageLabel;
+		}
+        $this->addRowToFile($headers);
+		
+        while ($row = $stmt->fetch()) {
+            $facetValueslocal = array($row['id'], $row['optionID']);
+			
+			foreach($locales as $languageId => $languageLabel) {
+				
+				$facetValueslocal[] = isset($localizedFacets[$languageId][$row['fid']]) ? $localizedFacets[$languageId][$row['fid']][optionValue] : $row['value'];
+			
+			
+			}
+            
+				
+			
+            $this->addRowToFile($facetValueslocal);
+        }
+        $this->closeFile();
+
+        return $file_name;
+    }
+	
+	
+	
+	
     /**
      * @param int $id
      * @return string
