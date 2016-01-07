@@ -21,6 +21,7 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
     const CUSTOMERS_CSV = 'customers.csv';
     const TRANSACTIONS = 'transactions';
     const TRANSACTIONS_CSV = 'transactions.csv';
+	const STORE_INFO_TXT = 'store_info.txt';
 
     const URL_XML = 'http://di1.bx-cloud.com/frontend/dbmind/en/dbmind/api/data/source/update';
     const URL_XML_DEV = 'http://di1.bx-cloud.com/frontend/dbmind/en/dbmind/api/data/source/update?dev=true';
@@ -150,6 +151,7 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
         $zip->addFile($this->getCustomers($id), self::CUSTOMERS_CSV);
 		$zip->addFile($this->getFacetValues($id), self::ITEM_FACETVALUES_CSV);
         $zip->addFile($this->getTransactions($id), self::TRANSACTIONS_CSV);
+		$zip->addFile($this->getStoreInfo($id), self::STORE_INFO_TXT);
         $zip->addFromString('properties.xml', $this->finishAndGetXml($id));
         $zip->close();
 
@@ -865,6 +867,17 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
 
         return $file_name;
     }
+	
+	protected function getStoreInfo($id) {
+		// prepare file & stream results into it
+        $file_name = $this->dirPath . self::STORE_INFO_TXT;
+        $this->openFile($file_name);
+		$string = "This store is the store id: " . $id;
+        $this->addStringToFile($string);
+        $this->closeFile();
+
+        return $file_name;
+	}
 
 	
 	/*return string of the filter values, article ids and option ids*/
@@ -1467,6 +1480,11 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
     protected function addRowToFile($row)
     {
         return fputcsv($this->fileHandle, $row, self::XML_DELIMITER, self::XML_ENCLOSURE);
+    }
+
+    protected function addStringToFile($string)
+    {
+        return fwrite($this->fileHandle, $string);
     }
 
     protected function closeFile()
