@@ -17,6 +17,8 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
     const ITEM_TRANSLATIONS_CSV = 'item_translations.csv';
 	const ITEM_FACETVALUES = 'item_facet_values';
     const ITEM_FACETVALUES_CSV = 'item_facet_values.csv';
+	const ITEM_BLOGS = 'item_blogs';
+	const ITEM_BLOGS_CSV = 'item_blogs.csv';
     const CUSTOMERS = 'customer_vals';
     const CUSTOMERS_CSV = 'customers.csv';
     const TRANSACTIONS = 'transactions';
@@ -150,6 +152,7 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
         }
         $zip->addFile($this->getCustomers($id), self::CUSTOMERS_CSV);
 		$zip->addFile($this->getFacetValues($id), self::ITEM_FACETVALUES_CSV);
+		$zip->addFile($this->getBlogs($id), self::ITEM_BLOGS_CSV);
         $zip->addFile($this->getTransactions($id), self::TRANSACTIONS_CSV);
 		$zip->addFile($this->getStoreInfo($id), self::STORE_INFO_TXT);
         $zip->addFromString('properties.xml', $this->finishAndGetXml($id));
@@ -1253,6 +1256,72 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
 
         return $file_name;
     }
+	
+	protected function getBlogs($id) {
+
+        $db = $this->db;
+		$this->log->debug("start collecting customers for shop id $id");
+        $headers = array('id', 'title', 'author_id', 'active', 'short_description', 'description', 'views', 'display_date', 'category_id', 'template', 'meta_keywords', 'meta_description', 'meta_title', 'assigned_articles', 'tags');
+
+		$sources = $this->xml->xpath('//sources');
+        $sources = $sources[0];
+        $source = $sources->addChild('source');
+        $source->addAttribute('type', 'item_data_file');
+        $source->addAttribute('id', self::ITEM_BLOGS);
+        $source->addChild('file')->addAttribute('value', self::ITEM_BLOGS_CSV);
+        $source->addChild('itemIdColumn')->addAttribute('value', 'item_id');
+        $this->appendXmlOptions($source);
+
+        // prepare XML configuration for "<properties>" tag
+        $properties = $this->xml->xpath('//properties');
+        $properties = $properties[0];
+	    foreach ($headers as $columnName) {
+			$property = $properties->addChild('property');
+			$property->addAttribute('id', 'blog_' . $columnName);
+			$property->addAttribute('type', 'string');
+			$transform = $property->addChild('transform');
+			$logic = $transform->addChild('logic');
+			$logic->addAttribute('source', self::ITEM_BLOGS);
+			$logic->addAttribute('type', 'direct');
+
+			$field = $logic->addChild('field');
+			$field->addAttribute('column', $columnName);
+
+			$forFieldParameter = $property->addChild('params');
+		}
+
+
+        // prepare queries
+        $sql = $db->select()
+                  ->from(array('b' => 's_blog'), 
+                         array('item_id' => new Zend_Db_Expr("CONCAT('blog_', b.id)"),
+                               'b.title','b.author_id','b.active', 
+                               'b.short_description','b.description','b.views', 
+                               'b.display_date','b.category_id','b.template', 
+                               'b.meta_keywords','b.meta_keywords','b.meta_description','b.meta_title', 
+                               'assigned_articles' => new Zend_Db_Expr("GROUP_CONCAT(bas.article_id)"),
+                               'tags' => new Zend_Db_Expr("GROUP_CONCAT(bt.name)")
+                               )
+                         )
+                  ->joinLeft(array('bas' => 's_blog_assigned_articles'), 'bas.blog_id = b.id')
+                  ->joinLeft(array('bt' => 's_blog_tags'), 'bt.blog_id = b.id')
+                  ->group('b.id');
+		$stmt = $db->query($sql);
+
+        // prepare file & stream results into it
+        $file_name = $this->dirPath . self::ITEM_BLOGS_CSV;
+        $this->openFile($file_name);
+        $this->addRowToFile($headers);
+
+        while ($row = $stmt->fetch()) {
+
+            $this->addRowToFile($row);
+
+        }
+		$this->closeFile();
+
+		return $file_name;
+	}
 
     /**
      * @param int $id
