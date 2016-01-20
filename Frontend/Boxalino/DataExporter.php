@@ -840,11 +840,20 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
             $label->addAttribute('value', 'value_' . $locale);
         }
         $this->appendXmlOptions($source);
+		
+		$db = $this->db;
+        $sql = $db->select()
+                  ->from(array('c' => 's_core_shops'), array('id', 'category_id'));
+        $stmt = $db->query($sql);
+		$language_root_category = array();
+		while ($row = $stmt->fetch()) {
+            $language_root_category[strtolower($row['category_id'])] = $row;
+        }
 
         // prepare queries
         $db = $this->db;
         $sql = $db->select()
-                  ->from(array('c' => 's_categories'), array('id', 'parent', 'description'))
+                  ->from(array('c' => 's_categories'), array('id', 'parent', 'description', 'path'))
                   ->where($this->qi('c.path') . ' IS NOT NULL')
                   ->where($this->qi('c.id') . ' <> ?', 1);
         $stmt = $db->query($sql . $this->getShopCategoryIds($id));
@@ -857,13 +866,19 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
         foreach($locales as $locale) {
             $headers[] = 'value_' . $locale;
         }
+        $headers[] = 'shop_id';
+        $headers[] = 'language';
         $this->addRowToFile($headers);
-
-        while ($row = $stmt->fetch()) {
+		
+		while ($row = $stmt->fetch()) {
             $category = array($row['id'], $row['parent']);
             foreach($locales as $locale) {
                 $category[] = $row['description'];
             }
+            $parts = explode('|', $row['path']);
+            $rootCategory = $parts[sizeof($parts)-2];
+            $category[] = $language_root_category[$rootCategory]['id'];
+            $category[] = $locales[$language_root_category[$rootCategory]['id']];
             $this->addRowToFile($category);
         }
         $this->closeFile();
@@ -1268,8 +1283,9 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
         $source = $sources->addChild('source');
         $source->addAttribute('type', 'item_data_file');
         $source->addAttribute('id', self::ITEM_BLOGS);
+        $source->addAttribute('additional_item_source', 'true');
         $source->addChild('file')->addAttribute('value', self::ITEM_BLOGS_CSV);
-        $source->addChild('itemIdColumn')->addAttribute('value', 'item_id');
+        $source->addChild('itemIdColumn')->addAttribute('value', 'id');
         $this->appendXmlOptions($source);
 
         // prepare XML configuration for "<properties>" tag
@@ -1289,7 +1305,6 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
 
 			$forFieldParameter = $property->addChild('params');
 		}
-
 
         // prepare queries
         $sql = $db->select()
