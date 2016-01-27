@@ -17,6 +17,8 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
     const ITEM_TRANSLATIONS_CSV = 'item_translations.csv';
 	const ITEM_FACETVALUES = 'item_facet_values';
     const ITEM_FACETVALUES_CSV = 'item_facet_values.csv';
+	const ITEM_ARTICLESDETAILS = 'item_articles_details';
+    const ITEM_ARTICLESDETAILS_CSV = 'item_articles_details.csv';
 	const ITEM_BLOGS = 'item_blogs';
 	const ITEM_BLOGS_CSV = 'item_blogs.csv';
     const CUSTOMERS = 'customer_vals';
@@ -144,6 +146,7 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
         // Create files
         $this->startXml($id);
         $zip->addFile($this->getArticles($id), self::ITEM_PROPERTIES_CSV);
+		$zip->addFile($this->getArticleDetails($id), self::ITEM_ARTICLESDETAILS_CSV);
         $zip->addFile($this->getBrands($id), self::ITEM_BRANDS_CSV);
         $zip->addFile($this->getCategories($id), self::CATEGORIES_CSV);
         $zip->addFile($this->getItemCategories($id), self::ITEM_CATEGORIES_CSV);
@@ -896,6 +899,53 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
 
         return $file_name;
 	}
+	
+	protected function getArticleDetails($id)
+	{
+		// prepare XML configuration for "<source>" tag
+        
+		$sources = $this->xml->xpath('//sources');
+        $sources = $sources[0];
+        $source = $sources->addChild('source');
+        $source->addAttribute('type', 'item_data_file');
+        $source->addAttribute('id', self::ITEM_ARTICLESDETAILS);
+        $source->addChild('file')->addAttribute('value', self::ITEM_ARTICLESDETAILS_CSV);
+        $source->addChild('itemIdColumn')->addAttribute('value', 'articleID');
+        $this->appendXmlOptions($source);
+		
+		// prepare XML configuration for "<properties>" tag
+        $properties = $this->xml->xpath('//properties');
+        $properties = $properties[0];
+	    
+        $property = $properties->addChild('property');
+        $property->addAttribute('id', 'sku_ordernumber');
+        $property->addAttribute('type', 'string');
+        $transform = $property->addChild('transform');
+        $logic = $transform->addChild('logic');
+        $logic->addAttribute('source', self::ITEM_ARTICLESDETAILS);
+        $logic->addAttribute('type', 'direct');
+		$field = $logic->addChild('field');
+		$field->addAttribute('column', 'ordernumber');
+		$property->addChild('params');
+		
+		$db = $this->db;
+		$sql = $db->select()
+                  ->from(array('t' => 's_articles_details'), array('id', 'articleID', 'ordernumber', 'suppliernumber', 'kind', 'additionaltext', 'sales', 'active', 'instock', 'stockmin', 'weight', 'position', 'width', 'height', 'length', 'ean', 'unitID', 'purchasesteps', 'maxpurchase', 'minpurchase', 'purchaseunit', 'referenceunit', 'packunit', 'releasedate', 'shippingfree', 'shippingtime'));
+		$stmt = $db->query($sql);
+		
+        // prepare file & stream results into it
+        $file_name = $this->dirPath . self::ITEM_ARTICLESDETAILS_CSV;
+        $this->openFile($file_name);
+        $headers = array('id', 'articleID', 'ordernumber', 'suppliernumber', 'kind', 'additionaltext', 'sales', 'active', 'instock', 'stockmin', 'weight', 'position', 'width', 'height', 'length', 'ean', 'unitID', 'purchasesteps', 'maxpurchase', 'minpurchase', 'purchaseunit', 'referenceunit', 'packunit', 'releasedate', 'shippingfree', 'shippingtime');
+		$this->addRowToFile($headers);
+		
+        while ($row = $stmt->fetch()) {
+            $this->addRowToFile($row);
+        }
+        $this->closeFile();
+
+        return $file_name;
+	}
 
 	
 	/*return string of the filter values, article ids and option ids*/
@@ -1466,7 +1516,7 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
         $customerIdColumn->addAttribute('customer_property_id', 'customer_id');
         $productIdColumn = $source->addChild('productIdColumn');
         $productIdColumn->addAttribute('value', 'product_id');
-        $productIdColumn->addAttribute('product_property_id', 'group_id');
+        $productIdColumn->addAttribute('product_property_id', 'sku_ordernumber');
         $source->addChild('productListPriceColumn')->addAttribute('value', 'price');
         $source->addChild('productDiscountedPriceColumn')->addAttribute('value', 'discounted_price');
         $source->addChild('totalOrderValueColumn')->addAttribute('value', 'total_order_value');
@@ -1507,7 +1557,8 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
                     array('d' => 's_order_details'),
                     $this->qi('d.orderID') . ' = ' . $this->qi('o.id'),
                     array(
-                        'product_id' => 'articleID',
+                        'product_id' => 'articleOrderNumber',
+                        'article_id' => 'articleID',
                         'price' => new Zend_Db_Expr(
                             "ROUND($dPrice * $oCurrencyFactor, $quoted2)"
                         ),
@@ -1539,6 +1590,7 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
             'confirmation_date',
             'shipping_date',
             'status',
+			'article_id'
         );
         sort($headers);
         $this->addRowToFile($headers);
