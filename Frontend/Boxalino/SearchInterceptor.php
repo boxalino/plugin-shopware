@@ -507,7 +507,9 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
                     $unorderedFacetValues = $this->Helper()->extractFacet($choiceResponse, 'categories');
                     $FacetValues = [];
                     foreach ($unorderedFacetValues as $FacetValue) {
-                        $FacetValues[$FacetValue->hierarchyId] = $FacetValue;
+						if($FacetValue->hitCount > 0) {
+							$FacetValues[$FacetValue->hierarchyId] = $FacetValue;
+						}
                     }
 
                     $facets[$key] = new Shopware\Bundle\SearchBundle\FacetResult\TreeFacetResult(
@@ -527,8 +529,9 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
                     $FacetValues = $this->Helper()->extractFacet($choiceResponse, 'products_' . $productPropertyName);
                     $valueList = [];
                     /* @var com\boxalino\p13n\api\thrift\FacetValue $FacetValue */
+                    $nbValues = 0;
                     foreach ($FacetValues as $FacetValue) {
-                        foreach ($facet->getValues() as $valueKey => $originalValue) {
+						foreach ($facet->getValues() as $valueKey => $originalValue) {
                             if ($productPropertyName == 'brand') {
                                 $check = (trim($originalValue->getLabel()) == trim($FacetValue->stringValue));
                             } else {
@@ -540,32 +543,40 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
                                 $hitCount = $FacetValue->hitCount;
                                 $active = $FacetValue->selected;
                             }
-                            $args = [];
-                            $args[] = $originalValue->getId();
-                            $args[] = $originalValue->getLabel() . ' (' . $hitCount . ')';
-                            $args[] = $active;
-                            if ($originalValue instanceof Shopware\Bundle\SearchBundle\FacetResult\MediaListItem) {
-                                $args[] = $originalValue->getMedia();
-                            }
-                            $args[] = $originalValue->getAttributes();
+							if($hitCount > 0) {
+								$nbValues++;
+								$args = [];
+								$args[] = $originalValue->getId();
+								$args[] = $originalValue->getLabel() . ' (' . $hitCount . ')';
+								$args[] = $active;
+								if ($originalValue instanceof Shopware\Bundle\SearchBundle\FacetResult\MediaListItem) {
+									$args[] = $originalValue->getMedia();
+								}
+								$args[] = $originalValue->getAttributes();
 
-                            if (!array_key_exists($valueKey, $valueList) || $check) {
-                                $r = new ReflectionClass(get_class($originalValue));
-                                $valueList[$valueKey] = $r->newInstanceArgs($args);
-                            }
+								if (!array_key_exists($valueKey, $valueList) || $check) {
+									$r = new ReflectionClass(get_class($originalValue));
+									$valueList[$valueKey] = $r->newInstanceArgs($args);
+								}
+							}
                         }
                     }
+					
+					if($nbValues > 0) {
 
-                    $facetResultClass = get_class($facet);
-                    $facets[$key] = new $facetResultClass(
-                        $facet->getFacetName(),
-                        $facet->isActive(),
-                        $facet->getLabel(),
-                        $valueList,
-                        $facet->getFieldName(),
-                        $facet->getAttributes(),
-                        $facet->getTemplate()
-                    );
+						$facetResultClass = get_class($facet);
+						$facets[$key] = new $facetResultClass(
+							$facet->getFacetName(),
+							$facet->isActive(),
+							$facet->getLabel(),
+							$valueList,
+							$facet->getFieldName(),
+							$facet->getAttributes(),
+							$facet->getTemplate()
+						);
+					} else {
+						unset($facets[$key]);
+					}
                     break;
             }
         }
@@ -579,6 +590,7 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
      */
     protected function updateTreeItemsWithFacetValue($values, $FacetValues) {
         /* @var Shopware\Bundle\SearchBundle\FacetResult\TreeItem $value */
+		$finalVals = array();
         foreach ($values as $key => $value) {
             $id = (string) $value->getId();
             $label = $value->getLabel();
@@ -590,9 +602,11 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
 
             if (array_key_exists($id, $FacetValues)) {
                 $label .= ' (' . $FacetValues[$id]->hitCount . ')';
-            }
+            } else {
+				
+			}
 
-            $values[$key] = new Shopware\Bundle\SearchBundle\FacetResult\TreeItem(
+            $finalVals[$key] = new Shopware\Bundle\SearchBundle\FacetResult\TreeItem(
                 $value->getId(),
                 $label,
                 $value->isActive(),
@@ -600,7 +614,7 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
                 $value->getAttributes()
             );
         }
-        return $values;
+        return $finalVals;
     }
 
     /**
