@@ -603,7 +603,9 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
             if (array_key_exists($id, $FacetValues)) {
                 $label .= ' (' . $FacetValues[$id]->hitCount . ')';
             } else {
-				
+				if(sizeof($innerValues)==0) {
+					continue;
+				}
 			}
 
             $finalVals[$key] = new Shopware\Bundle\SearchBundle\FacetResult\TreeItem(
