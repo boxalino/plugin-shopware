@@ -985,25 +985,44 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
         $properties = $properties[0];
 	    foreach ($sqlCounterOptionID as $columnName => $fields) {
 		
-        $property = $properties->addChild('property');
-        $property->addAttribute('id', 'optionID_' . $fields[optionID]);
-        $property->addAttribute('type', 'text');
-        $transform = $property->addChild('transform');
-        $logic = $transform->addChild('logic');
-        $logic->addAttribute('source', self::ITEM_FACETVALUES);
-        $logic->addAttribute('type', 'direct');
-		
-        $locales = $this->getShopLocales($id);
-        foreach($locales as $locale) {
-            $field = $logic->addChild('field');
-            $field->addAttribute('language', $locale);
-            $field->addAttribute('column', 'value_' . $locale);
-        }
-		
-        $forFieldParameter = $property->addChild('params');
-		$paramslogic = $forFieldParameter->addChild('fieldParameter');
-		$paramslogic->addAttribute('name', 'eligibility_condition');
-        $paramslogic->addAttribute('value', 'option_id=' . $fields[optionID]);
+			$property = $properties->addChild('property');
+			$property->addAttribute('id', 'optionID_' . $fields[optionID]);
+			$property->addAttribute('type', 'text');
+			$transform = $property->addChild('transform');
+			$logic = $transform->addChild('logic');
+			$logic->addAttribute('source', self::ITEM_FACETVALUES);
+			$logic->addAttribute('type', 'direct');
+			
+			$locales = $this->getShopLocales($id);
+			foreach($locales as $locale) {
+				$field = $logic->addChild('field');
+				$field->addAttribute('language', $locale);
+				$field->addAttribute('column', 'value_' . $locale);
+			}
+			
+			$forFieldParameter = $property->addChild('params');
+			$paramslogic = $forFieldParameter->addChild('fieldParameter');
+			$paramslogic->addAttribute('name', 'eligibility_condition');
+			$paramslogic->addAttribute('value', 'option_id=' . $fields[optionID]);
+			
+			//
+			
+			$property = $properties->addChild('property');
+			$property->addAttribute('id', 'optionID_' . $fields[optionID] . '_id');
+			$property->addAttribute('type', 'string');
+			$transform = $property->addChild('transform');
+			$logic = $transform->addChild('logic');
+			$logic->addAttribute('source', self::ITEM_FACETVALUES);
+			$logic->addAttribute('type', 'direct');
+			
+			$locales = $this->getShopLocales($id);
+			$field = $logic->addChild('field');
+			$field->addAttribute('column', 'facet_value_id');
+			
+			$forFieldParameter = $property->addChild('params');
+			$paramslogic = $forFieldParameter->addChild('fieldParameter');
+			$paramslogic->addAttribute('name', 'eligibility_condition');
+			$paramslogic->addAttribute('value', 'option_id=' . $fields[optionID]);
 		
 		
 		}
@@ -1041,7 +1060,7 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
         // prepare file & stream results into it
         $file_name = $this->dirPath . self::ITEM_FACETVALUES_CSV;
         $this->openFile($file_name);
-        $headers = array('item_id', 'option_id');
+        $headers = array('item_id', 'option_id', 'facet_value_id');
 		$locales = $this->getShopLocales($id);
 		
 		foreach($locales as $languageId => $languageLabel) {
@@ -1050,7 +1069,7 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
         $this->addRowToFile($headers);
 		
         while ($row = $stmt->fetch()) {
-            $facetValueslocal = array($row['id'], $row['optionID']);
+            $facetValueslocal = array($row['id'], $row['optionID'], $row['fid']);
 			
 			foreach($locales as $languageId => $languageLabel) {
 				
