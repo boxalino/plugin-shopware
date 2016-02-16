@@ -910,7 +910,7 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
         $source->addAttribute('type', 'item_data_file');
         $source->addAttribute('id', self::ITEM_ARTICLESDETAILS);
         $source->addChild('file')->addAttribute('value', self::ITEM_ARTICLESDETAILS_CSV);
-        $source->addChild('itemIdColumn')->addAttribute('value', 'articleID');
+        $source->addChild('itemIdColumn')->addAttribute('value', 'id');
         $this->appendXmlOptions($source);
 		
 		// prepare XML configuration for "<properties>" tag
