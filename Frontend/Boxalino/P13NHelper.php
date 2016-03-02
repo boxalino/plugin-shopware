@@ -3,8 +3,7 @@
 require_once __DIR__ . '/lib/vendor/Thrift/ClassLoader/ThriftClassLoader.php';
 require_once __DIR__ . '/lib/vendor/Thrift/HttpP13n.php';
 
-class Shopware_Plugins_Frontend_Boxalino_P13NHelper
-{
+class Shopware_Plugins_Frontend_Boxalino_P13NHelper {
 
     private static $instance = null;
 
@@ -17,8 +16,7 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
 
     private $relaxationEnabled = false;
 
-    private function __construct()
-    {
+    private function __construct() {
         $this->config = Shopware()->Config();
     }
 
@@ -31,41 +29,48 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
         return self::$instance;
     }
 
-    public function search($text, $p13nOffset, $p13nHitCount, $options = array())
-    {
+    public function search($text, $p13nOffset, $p13nHitCount, $options = array()) {
+        $inquiry = $this->newChoiceInquiry($text, $p13nOffset, $p13nHitCount, $options);
+        return $this->searchAll(array($inquiry));
+    }
+    
+    public function searchAll($inquiries) {
+        $timing = $this->newTiming("searchAll");
         $p13nHost = $this->config->get('boxalino_host');
         $p13nAccount = $this->getAccount();
         $p13nUsername = $this->config->get('boxalino_username');
         $p13nPassword = $this->config->get('boxalino_password');
         $cookieDomain = $this->config->get('boxalino_domain');
-
-        $p13nSearch = $text;
-        $p13nLanguage = $this->getShortLocale();
-        // fields you want in the response, i.e. title, body, etc.
-        $p13nFields = array(
-            'id',
-            'title',
-            'body',
-            'name',
-            'products_group_id',
-            'net_price',
-            'standardPrice',
-            'products_mediaId',
-            'products_supplier',
-            'products_net_price',
-            'products_tax',
-            'products_group_id'
-        );
-
-
+        
         // Create basic P13n client
         $p13n = new HttpP13n();
         $p13n->setHost($p13nHost);
         $p13n->setAuthorization($p13nUsername, $p13nPassword);
-
+        
         // Create main choice request object
         $choiceRequest = $p13n->getChoiceRequest($p13nAccount, $cookieDomain);
-
+        
+        $choiceRequest->inquiries = $inquiries;
+        
+        // Call the service
+        try {
+            $choiceResponse = $p13n->choose($choiceRequest);
+        } catch (Exception $e) {
+            $this->debug("choose failed", $e->getMessage());
+            if ($this->isDebug()) {
+                exit;
+            }
+            Shopware()->PluginLogger()->debug('Boxalino Search: Error occurred with message ' . $e->getMessage());
+            return;
+        }
+        $timing();
+        return $choiceResponse;
+    }
+    
+    public function newChoiceInquiry($text, $p13nOffset, $p13nHitCount, $options = array(), $type = 'product') {
+        // ensure init thrift classloader
+        new HttpP13n();
+        
         // Setup main choice inquiry object
         $inquiry = new \com\boxalino\p13n\api\thrift\ChoiceInquiry();
         $inquiry->choiceId = $this->config->get('boxalino_search_widget_name');
@@ -81,163 +86,211 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
             $inquiry->withRelaxation = $this->relaxationEnabled = true;
         }
 
-        // Setup a search query
-        $searchQuery = new \com\boxalino\p13n\api\thrift\SimpleSearchQuery();
-        $searchQuery->indexId = $p13nAccount;
-        $searchQuery->language = $p13nLanguage;
-        $searchQuery->returnFields = $p13nFields;
-        $searchQuery->offset = $p13nOffset;
-        $searchQuery->hitCount = $p13nHitCount;
-        $searchQuery->queryText = $p13nSearch;
-        $searchQuery->groupBy = 'products_group_id';
-
-        if (!empty($options)) {
-            $searchQuery->facetRequests = [];
-            foreach ($options as $field => $values) {
-                switch ($field) {
-                    case 'categoryName':
-                    case 'sort':
-                        continue 2;
-                    case 'category':
-                        $searchQuery->facetRequests[] = new \com\boxalino\p13n\api\thrift\FacetRequest([
-                            'fieldName' => 'category_id',
-                            'selectedValues' => [new \com\boxalino\p13n\api\thrift\FacetValue([
-                                'stringValue' => (string) $values
-                            ])]
-                        ]);
-						$searchQuery->facetRequests[] = new \com\boxalino\p13n\api\thrift\FacetRequest([
-                            'fieldName' => 'categories'
-                        ]);
-                        break;
-                    case 'price':
-                        $searchQuery->facetRequests[] = new \com\boxalino\p13n\api\thrift\FacetRequest([
-                            'fieldName' => 'discountedPrice',
-                            'numerical' => true,
-                            'range' => true,
-                            'selectedValues' => [new \com\boxalino\p13n\api\thrift\FacetValue([
-                                'rangeFromInclusive' => $values['start'],
-                                'rangeToExclusive' => $values['end']
-                            ])]
-                        ]);
-                        break;
-                    default:
-                        $selectedValues = [];
-                        foreach ($values as $value) {
-                            $selectedValues[] = new \com\boxalino\p13n\api\thrift\FacetValue([
-                                'stringValue' => $value
-                            ]);
-                        }
-                        $searchQuery->facetRequests[] = new \com\boxalino\p13n\api\thrift\FacetRequest([
-                            'fieldName' => "products_$field",
-                            'selectedValues' => $selectedValues,
-                            'andSelectedValues' => ($field == 'property_values')
-                        ]);
-                }
-            }
-
-            $sortFields = [];
-            if (!empty($options['sort'])) {
-                $sortFields[] = new \com\boxalino\p13n\api\thrift\SortField(array(
-                    'fieldName' => $options['sort']['field'],
-                    'reverse' => $options['sort']['reverse']
-                ));
-            }
-
-            if (!empty($sortFields))
-                $searchQuery->sortFields = $sortFields;
-        }
+        $searchQuery = $this->newSearchQuery($text, $p13nOffset, $p13nHitCount, $options, $type);
 
         // Connect search query to the inquiry
         $inquiry->simpleSearchQuery = $searchQuery;
-
-        // Add inquiry to choice request
-        $choiceRequest->inquiries = array($inquiry);
-
-        // Call the service
-        try {
-            $choiceResponse = $p13n->choose($choiceRequest);
-            $this->debug($choiceRequest, $choiceResponse);
-        } catch (Exception $e) {
-            $this->debug($choiceRequest, $e->getMessage());
-            if ($this->isDebug()) {
-                exit;
-            }
-            Shopware()->PluginLogger()->debug('Boxalino Search: Error occurred with message ' . $e->getMessage());
-            return;
+        return $inquiry;
+    }
+    
+    public function newSearchQuery($text, $offset, $hitCount, $options = array(), $type = 'product') {
+        if ($options == null) {
+            $options = array();
         }
-        return $choiceResponse;
+        $options = $this->withTypeFilter($type, $options);
+        $searchQuery = new \com\boxalino\p13n\api\thrift\SimpleSearchQuery();
+        $searchQuery->indexId = $this->getAccount();
+        $searchQuery->language = $this->getShortLocale();
+        $searchQuery->offset = $offset;
+        $searchQuery->hitCount = $hitCount;
+        $searchQuery->queryText = $text;
+        if ($type == 'product') {
+            $searchQuery->groupBy = 'products_group_id';
+        }
+        $sortOrder = com\boxalino\p13n\api\thrift\FacetSortOrder::COLLATION;
+        $searchQuery->facetRequests = [];
+        foreach ($options as $field => $values) {
+            switch ($field) {
+                case 'categoryName':
+                case 'sort':
+                case 'filters':
+                case 'returnFields':
+                    continue 2;
+                case 'category':
+                    $searchQuery->facetRequests[] = new \com\boxalino\p13n\api\thrift\FacetRequest([
+                        'fieldName' => 'category_id',
+                        'selectedValues' => [new \com\boxalino\p13n\api\thrift\FacetValue([
+                            'stringValue' => (string) $values
+                        ])],
+                        'sortOrder' => $sortOrder
+                    ]);
+                    $searchQuery->facetRequests[] = new \com\boxalino\p13n\api\thrift\FacetRequest([
+                        'fieldName' => 'categories'
+                    ]);
+                    break;
+                case 'price':
+                    $searchQuery->facetRequests[] = new \com\boxalino\p13n\api\thrift\FacetRequest([
+                        'fieldName' => 'discountedPrice',
+                        'numerical' => true,
+                        'range' => true,
+                        'selectedValues' => [new \com\boxalino\p13n\api\thrift\FacetValue([
+                            'rangeFromInclusive' => $values['start'],
+                            'rangeToExclusive' => $values['end']
+                        ])],
+                        'boundsOnly' => true
+                    ]);
+                    break;
+                default:
+                    $selectedValues = [];
+                    foreach ($values as $value) {
+                        $selectedValues[] = new \com\boxalino\p13n\api\thrift\FacetValue([
+                            'stringValue' => $value
+                        ]);
+                    }
+                    $searchQuery->facetRequests[] = new \com\boxalino\p13n\api\thrift\FacetRequest([
+                        'fieldName' => "products_$field",
+                        'selectedValues' => $selectedValues,
+                        'andSelectedValues' => ($field == 'property_values'),
+                        'sortOrder' => $sortOrder
+                    ]);
+            }
+        }
+
+        $sortFields = [];
+        if (!empty($options['sort'])) {
+            $sortFields[] = new \com\boxalino\p13n\api\thrift\SortField(array(
+                'fieldName' => $options['sort']['field'],
+                'reverse' => $options['sort']['reverse']
+            ));
+        }
+        if (!empty($sortFields)) {
+            $searchQuery->sortFields = $sortFields;
+        }
+        if (!empty($options['filters'])) {
+            $searchQuery->filters = array_map(function($filter) {
+                return new \com\boxalino\p13n\api\thrift\Filter($filter);
+            }, $options['filters']);
+        }
+        if (!empty($options['returnFields'])) {
+            $searchQuery->returnFields = $options['returnFields'];
+        } else {
+            $searchQuery->returnFields = array(
+                'id',
+                'title',
+                'body',
+                'name',
+                'products_group_id',
+                'net_price',
+                'standardPrice',
+                'products_mediaId',
+                'products_supplier',
+                'products_net_price',
+                'products_tax',
+                'products_group_id'
+            );
+        }
+        return $searchQuery;
     }
 
-    public function autocomplete($text, $p13nOffset, $p13nHitCount)
-    {
+    
+    public function withTypeFilter($type, $options = array()) {
+        $filter = array(
+            'fieldName' => 'bx_type',
+            'stringValues' => array($type)
+        );
+        if (array_key_exists('filters', $options)) {
+            $options['filters'] = array_merge(array(filter), $options['filters']);
+        } else {
+            $options['filters'] = array($filter);
+        }
+        return $options;
+    }
+
+    public function autocomplete($text, $hitCount) {
+        $request = $this->newAutocompleteRequest($text, $hitCount, $hitCount);
+        return $this->autocompleteAll(array($request))[0];
+    }
+    
+    public function autocompleteAll($requests) {
+        $timing = $this->newTiming("autocompleteAll");
         $p13nHost = $this->config->get('boxalino_host');
         $p13nAccount = $this->getAccount();
         $p13nUsername = $this->config->get('boxalino_username');
         $p13nPassword = $this->config->get('boxalino_password');
         $cookieDomain = $this->config->get('boxalino_domain');
-
+        
         $p13nSearch = $text;
         $p13nLanguage = $this->getShortLocale();
-        $p13nFields = array('products_ordernumber', 'products_group_id');
-
-
+        
         // Create basic P13n client
         $p13n = new HttpP13n();
         $p13n->setHost($p13nHost);
         $p13n->setAuthorization($p13nUsername, $p13nPassword);
-
-        // Create main choice request object
-        $choiceRequest = $p13n->getChoiceRequest($p13nAccount, $cookieDomain);
-        $autocompleteRequest = new \com\boxalino\p13n\api\thrift\AutocompleteRequest();
-
-        // Setup a search query
-        $searchQuery = new \com\boxalino\p13n\api\thrift\SimpleSearchQuery();
-        $searchQuery->indexId = $p13nAccount;
-        $searchQuery->language = $p13nLanguage;
-        $searchQuery->returnFields = $p13nFields;
-        $searchQuery->offset = $p13nOffset;
-        $searchQuery->hitCount = $p13nHitCount;
-        $searchQuery->queryText = $p13nSearch;
-        $searchQuery->groupBy = 'products_group_id';
-
-        $autocompleteQuery = new \com\boxalino\p13n\api\thrift\AutocompleteQuery();
-        $autocompleteQuery->indexId = $p13nAccount;
-        $autocompleteQuery->language = $this->getShortLocale();
-        $autocompleteQuery->queryText = $p13nSearch;
-        $autocompleteQuery->suggestionsHitCount = $p13nHitCount;
-        $autocompleteQuery->highlight = true;
-        $autocompleteQuery->highlightPre = '<em>';
-        $autocompleteQuery->highlightPost = '</em>';
-
-        // Add inquiry to choice request
-        $cemv = Shopware()->Front()->Request()->getCookie('cemv');
-        if(empty($cemv)) {
-            $cemv = self::getSessionId();
-        }
-        $autocompleteRequest->userRecord = $choiceRequest->userRecord;
-        $autocompleteRequest->choiceId = $this->config->get('boxalino_autocomplete_widget_name');
-        $autocompleteRequest->profileId = $cemv;
-        $autocompleteRequest->autocompleteQuery = $autocompleteQuery;
-        $autocompleteRequest->searchChoiceId = $this->config->get('boxalino_search_widget_name');
-        $autocompleteRequest->searchQuery = $searchQuery;
-
+        
+        // update cookies
+        $p13n->getChoiceRequest($p13nAccount, $cookieDomain);
+        
         // Call the service
         try {
-            $choiceResponse = $p13n->autocomplete($autocompleteRequest);
-            $this->debug($autocompleteRequest, $choiceResponse);
+            $requestBundle = new \com\boxalino\p13n\api\thrift\AutocompleteRequestBundle();
+            $requestBundle->requests = $requests;
+            $responseBundle = $p13n->autocompleteAll($requestBundle);
         } catch (Exception $e) {
-            $this->debug($autocompleteRequest, $e->getMessage());
+            $this->debug("autocompleteAll failed", $e->getMessage());
             if ($this->isDebug()) {
                 exit;
             }
             Shopware()->PluginLogger()->debug('Boxalino Autocompletion: Error occurred with message ' . $e->getMessage());
             return;
         }
-        return $choiceResponse;
+        $timing();
+        return $responseBundle->responses;
+    }
+    
+    public function newAutocompleteRequest($text, $suggestionsHitCount, $hitCount, $options = array(), $type = 'product') {
+        if ($hitCount == null) {
+            $hitCount = $suggestionsHitCount;
+        }
+        if (empty($options['returnFields'])) {
+            $options['returnFields'] = array(
+                    'products_ordernumber',
+                    'products_group_id'
+            );
+        }
+        
+        // ensure init thrift classloader
+        new HttpP13n();
+        $account = $this->getAccount();
+        $userRecord = new \com\boxalino\p13n\api\thrift\UserRecord();
+        $userRecord->username = $account;
+        $request = new \com\boxalino\p13n\api\thrift\AutocompleteRequest();
+        
+        $searchQuery = $this->newSearchQuery($text, $offset, $hitCount, $options, $type);
+        
+        $autocompleteQuery = new \com\boxalino\p13n\api\thrift\AutocompleteQuery();
+        $autocompleteQuery->indexId = $account;
+        $autocompleteQuery->language = $this->getShortLocale();
+        $autocompleteQuery->queryText = $text;
+        $autocompleteQuery->suggestionsHitCount = $suggestionsHitCount;
+        $autocompleteQuery->highlight = true;
+        $autocompleteQuery->highlightPre = '<em>';
+        $autocompleteQuery->highlightPost = '</em>';
+        
+        $cemv = Shopware()->Front()->Request()->getCookie('cemv');
+        if (empty($cemv)) {
+            $cemv = self::getSessionId();
+        }
+        $request->userRecord = $userRecord;
+        $request->choiceId = $this->config->get('boxalino_autocomplete_widget_name');
+        $request->profileId = $cemv;
+        $request->autocompleteQuery = $autocompleteQuery;
+        $request->searchChoiceId = $this->config->get('boxalino_search_widget_name');
+        $request->searchQuery = $searchQuery;
+        return $request;
     }
 
-    public function findRawRecommendations($id, $role, $p13nChoiceId, $count = 5, $offset = 0, $fieldName = 'products_group_id', $context = array())
-    {
+    public function findRawRecommendations($id, $role, $p13nChoiceId, $count = 5, $offset = 0, $fieldName = 'products_group_id', $context = array(), $contextItems = array()) {
+        $timing = $this->newTiming("findRawRecommendations");
         $p13nHost = $this->config->get('boxalino_host');
         $p13nAccount = $this->getAccount();
         $p13nUsername = $this->config->get('boxalino_username');
@@ -267,7 +320,13 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
             $requestContext->parameters = $context;
             $choiceRequest->requestContext = $requestContext;
         }
-
+        
+        $contextItems = array();
+        if (is_array($id)) {
+            $contextItems = &$id;
+            $id = array_shift($id);
+        }
+        
         // Setup a context item
         if (!empty($id)) {
             $contextItems = array(
@@ -279,6 +338,14 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
                 ))
             );
         }
+        foreach ($contextItems as $contextItem) {
+            $contextItems[] = new \com\boxalino\p13n\api\thrift\ContextItem(array(
+                'indexId' => $p13nAccount,
+                'fieldName' => $fieldName,
+                'contextItemId' => $id,
+                'role' => 'subProduct'
+            ));
+        }
 
         // Setup a search query
         $searchQuery = new \com\boxalino\p13n\api\thrift\SimpleSearchQuery();
@@ -288,6 +355,12 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
         $searchQuery->offset = $offset;
         $searchQuery->hitCount = $count;
         $searchQuery->groupBy = 'products_group_id';
+        $searchQuery->filters = array(
+            new \com\boxalino\p13n\api\thrift\Filter(array(
+                'fieldName' => 'bx_type',
+                'stringValues' => array('product')
+            ))
+        );
 
         if (!is_array($p13nChoiceId)) {
             $p13nChoiceId = array($p13nChoiceId);
@@ -309,15 +382,15 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
         // Call the service
         try {
             $choiceResponse = $p13n->choose($choiceRequest);
-            $this->debug($choiceRequest, $choiceResponse);
         } catch (Exception $e) {
-            $this->debug($choiceRequest, $e->getMessage());
+            $this->debug("choose failed", $e->getMessage());
             if ($this->isDebug()) {
                 exit;
             }
             Shopware()->PluginLogger()->debug('Boxalino Recommendation: Error occurred with message ' . $e->getMessage());
             return;
         }
+        $timing();
         return $choiceResponse;
     }
 
@@ -334,13 +407,12 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
         }
     }
 
-    public function extractResults($choiceResponse, $choiceIds = array())
-    {
+    public function extractResults($variantLike, $choiceIds = array()) {
         $results = array();
         $count = 0;
         $choiceIdCount = is_array($choiceIds) ? count($choiceIds) : 0;
         /** @var \com\boxalino\p13n\api\thrift\Variant $variant */
-        foreach ($choiceResponse->variants as $variant) {
+        foreach ($this->variantsOf($variantLike) as $variant) {
             /** @var \com\boxalino\p13n\api\thrift\SearchResult $searchResult */
             $searchResult = $variant->searchResult;
             if ($choiceIdCount) {
@@ -361,8 +433,7 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
         }
     }
 
-    public function extractResultsFromHitGroups($hitsGroups, &$results = array())
-    {
+    public function extractResultsFromHitGroups($hitsGroups, &$results = array()) {
         /** @var \com\boxalino\p13n\api\thrift\HitsGroup $group */
         foreach ($hitsGroups as $group) {
             /** @var \com\boxalino\p13n\api\thrift\Hit $item */
@@ -384,25 +455,54 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
     }
 
     /**
-     * @param $choiceResponse
+     * @param $variantLike
      * @param $facet
      * @return com\boxalino\p13n\api\thrift\FacetValue[]
      */
-    public function extractFacet($choiceResponse, $facet)
-    {
+    public function extractFacet($variantLike, $facet, $facetResponses = null) {
+        return $this->extractFacetByPattern($variantLike, '/' . $facet . '/', $facetResponses, true);
+    }
+    
+    public function extractFacetByPattern($variantLike, $facetPattern, $facetResponses = null, $flat = false) {
         $facets = array();
-        /** @var \com\boxalino\p13n\api\thrift\Variant $variant */
-        foreach ($choiceResponse->variants as $variant) {
+        foreach ($this->variantsOf($variantLike) as $variant) {
             foreach ($variant->searchResult->facetResponses as $facetResponse) {
-                if ($facetResponse->fieldName == $facet)
-                    $facets = array_merge($facets, $facetResponse->values);
+                $facets = $this->extractFacetResponse($facetPattern, $facetResponse, $facets, $flat);
+            }
+        }
+        if ($facetResponses) {
+            foreach ($facetResponses as $facetResponse) {
+                $facets = $this->extractFacetResponse($facetPattern, $facetResponse, $facets, $flat);
             }
         }
         return $facets;
     }
+    
+    private function variantsOf($variantLike) {
+        if ($variantLike instanceof \com\boxalino\p13n\api\thrift\Variant) {
+            return array($variantLike);
+        }
+        return $variantLike->variants;
+    }
+    
+    private function extractFacetResponse($facetPattern, $facetResponse, $facets, $flat) {
+        $fieldName = $facetResponse->fieldName;
+        if (!preg_match($facetPattern, $fieldName)) return $facets;
+        
+        $present = array();
+        if ($flat) {
+            $present = &$facets;
+        } else if (array_key_exists($fieldName, $facets)) {
+            $present = $facets[$fieldName];
+        }
+        $merged = array_merge($present, $facetResponse->values);
+        if ($flat) return $merged;
+        
+        $facets[$fieldName] = $merged;
+        return $facets;
+    }
 
-    public function getLocalArticles($results)
-    {
+    public function getLocalArticles($results) {
         if (array_key_exists('results', $results)) $results = $results['results'];
         $articles = array();
         foreach ($results as $p13nResult) {
@@ -415,65 +515,82 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
         return $articles;
     }
 
-    public function getRelaxationSuggestions(\com\boxalino\p13n\api\thrift\ChoiceResponse $response)
-    {
+    public function getRelaxationSuggestions(\com\boxalino\p13n\api\thrift\Variant $variant) {
+        if (!$this->relaxationEnabled || !is_object($variant->searchRelaxation)) return array();
+        
         $suggestions = array();
-        if ($this->relaxationEnabled) {
-            /** @var \com\boxalino\p13n\api\thrift\Variant $variant */
-            foreach ($response->variants as $variant) {
-                if (is_object($variant->searchRelaxation)) {
-                    /** @var \com\boxalino\p13n\api\thrift\SearchResult $searchResult */
-                    foreach ($variant->searchRelaxation->suggestionsResults as $searchResult) {
-                        $suggestions[] = array(
-                            'text' => $searchResult->queryText,
-                            'count' => $searchResult->totalHitCount,
-                            'results' => $this->extractResultsFromHitGroups($searchResult->hitsGroups),
-                        );
-                    }
-                }
-            }
+        /** @var \com\boxalino\p13n\api\thrift\SearchResult $searchResult */
+        foreach ($variant->searchRelaxation->suggestionsResults as $searchResult) {
+            $suggestions[] = array(
+                'text' => $searchResult->queryText,
+                'count' => $searchResult->totalHitCount,
+                'results' => $this->extractResultsFromHitGroups($searchResult->hitsGroups),
+                'facetResponses' => $searchResult->facetResponses
+            );
         }
         return $suggestions;
     }
 
-    public function getRelaxationSubphraseResults(\com\boxalino\p13n\api\thrift\ChoiceResponse $response)
-    {
+    public function getRelaxationSubphraseResults(\com\boxalino\p13n\api\thrift\Variant $variant) {
+        if (!$this->relaxationEnabled || !is_object($variant->searchRelaxation)) return array();
+        
         $subphrases = array();
-        if ($this->relaxationEnabled) {
-            /** @var \com\boxalino\p13n\api\thrift\Variant $variant */
-            foreach ($response->variants as $variant) {
-                if (is_object($variant->searchRelaxation)) {
-                    /** @var \com\boxalino\p13n\api\thrift\SearchResult $searchResult */
-                    foreach ($variant->searchRelaxation->subphrasesResults as $searchResult) {
-                        $subphrases[] = array(
-                            'text' => $searchResult->queryText,
-                            'count' => $searchResult->totalHitCount,
-                            'results' => $this->extractResultsFromHitGroups($searchResult->hitsGroups),
-                        );
-                    }
-                }
-            }
+        /** @var \com\boxalino\p13n\api\thrift\SearchResult $searchResult */
+        foreach ($variant->searchRelaxation->subphrasesResults as $searchResult) {
+            $subphrases[] = array(
+                'text' => $searchResult->queryText,
+                'count' => $searchResult->totalHitCount,
+                'results' => $this->extractResultsFromHitGroups($searchResult->hitsGroups),
+                'facetResponses' => $searchResult->facetResponses
+            );
         }
         return $subphrases;
     }
 
-    public function getAutocompleteSuggestions(\com\boxalino\p13n\api\thrift\AutocompleteResponse $response)
-    {
+    public function getAutocompleteSuggestions($responses, $hitCount, $merge = 1) {
         $suggestions = array();
+        $otherSuggestions = array();
+        $seen = array();
+        $response = array_shift($responses);
         foreach ($response->hits as $hit) {
             $suggestions[] = array(
                 'text' => $hit->suggestion,
                 'html' => (strlen($hit->highlighted) ? $hit->highlighted : $hit->suggestion),
                 'hits' => $hit->searchResult->totalHitCount,
             );
+            $seen[$hit->suggestion] = true;
         }
-        return $suggestions;
+        foreach ($responses as $response) {
+            foreach ($response->hits as $hit) {
+                if ($seen[$hit->suggestion]) continue;
+                
+                if ($merge-- <= 0) break 2;
+                
+                $otherSuggestions[] = array(
+                    'text' => $hit->suggestion,
+                    'html' => (strlen($hit->highlighted) ? $hit->highlighted : $hit->suggestion),
+                    'hits' => $hit->searchResult->totalHitCount,
+                );
+                $seen[$hit->suggestion] = true;
+            }
+        }
+        array_splice($suggestions, $hitCount - count($otherSuggestions));
+        $merged = array_merge($suggestions, $otherSuggestions);
+        return $merged;
     }
-
-    public function getAutocompletePreviewsearch(\com\boxalino\p13n\api\thrift\AutocompleteResponse $response)
-    {
+    
+    public function getAutocompletePreviewsearch(\com\boxalino\p13n\api\thrift\AutocompleteResponse $response) {
+        $hitsGroups = $response->prefixSearchResult->hitsGroups;
+        if (!$hitsGroups) {
+            foreach ($response->hits as $hit) {
+                $hitsGroups = $hit->searchResult->hitsGroups;
+                if ($hitsGroups) {
+                    break;
+                }
+            }
+        }
         $results = array();
-        foreach ($this->extractResultsFromHitGroups($response->prefixSearchResult->hitsGroups) as $result) {
+        foreach ($this->extractResultsFromHitGroups($hitsGroups) as $result) {
             $results[] = $result['products_ordernumber'];
         }
         return $results;
@@ -484,8 +601,7 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
      *
      * @param Enlight_Controller_Request_Request $request
      */
-    public function setRequest(Enlight_Controller_Request_Request $request)
-    {
+    public function setRequest(Enlight_Controller_Request_Request $request) {
         $this->request = $request;
     }
 
@@ -494,16 +610,14 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
      *
      * @return Enlight_Controller_Request_Request
      */
-    public function Request()
-    {
+    public function Request() {
         return $this->request;
     }
 
     /**
      * @return string
      */
-    private function getShortLocale()
-    {
+    public function getShortLocale() {
         $locale = Shopware()->Shop()->getLocale();
         $shortLocale = $locale->getLocale();
         $position = strpos($shortLocale, '_');
@@ -512,35 +626,49 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper
         return $shortLocale;
     }
 
-    public function getSearchLimit()
-    {
+    public function getSearchLimit() {
         return $this->config->get('maxlivesearchresults', 6);
     }
 
-    private function debug($request, $response = null)
-    {
+    public function debug($a, $b = null) {
         if ($this->isDebug()) {
             echo '<pre>';
-            var_dump($request, $response);
+            var_dump($a, $b);
             echo '</pre>';
         }
     }
 
-    private function isDebug()
-    {
+    private function isDebug() {
         return $this->Request()->getQuery('dev_bx_disp', false) == 'true';
     }
 
-    public static function getAccount()
-    {
+    public static function getAccount() {
         $config = Shopware()->Config();
-        if(
-            $config->get('boxalino_dev', 0) == 1
-        ){
+        if ($config->get('boxalino_dev', 0) == 1) {
             return $config->get('boxalino_account') . '_dev';
         } else{
             return $config->get('boxalino_account');
         }
-
     }
+    
+    public function getBasket($arguments = null) {
+        $basket = Shopware()->Modules()->Basket()->sGetBasket();
+        if ($arguments !== null && (!$basket || !$basket['content'])) {
+            $basket = $arguments->getSubject()->View()->sBasket;
+        }
+        return $basket;
+    }
+    
+    public static function isValidChoiceId($choiceId) {
+        return strlen($choiceId) && $choiceId != "-";
+    }
+    
+    public function newTiming($name) {
+        $then = microtime(true);
+        return function() use($name, $then) {
+            $took = microtime(true) - $then;
+            $this->debug("timing $name -- took [ms]", ($took * 1000));
+        };
+    }
+    
 }

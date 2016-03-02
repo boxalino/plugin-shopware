@@ -4,11 +4,16 @@
  * frontend interceptor
  */
 class Shopware_Plugins_Frontend_Boxalino_FrontendInterceptor
-    extends Shopware_Plugins_Frontend_Boxalino_Interceptor
-{
+    extends Shopware_Plugins_Frontend_Boxalino_Interceptor {
+    
     private $_productRecommendations = array(
         'sSimilarArticles' => 'boxalino_recommendation_widget_name',
         'sRelatedArticles' => 'boxalino_recommendation_related_widget_name',
+    );
+    
+    private $_productRecommendationsGeneric = array(
+      'boughtArticles' => 'boxalino_recommendation_bought_widget_name',
+      'viewedArticles' => 'boxalino_recommendation_viewed_widget_name',
     );
 
     /**
@@ -16,8 +21,7 @@ class Shopware_Plugins_Frontend_Boxalino_FrontendInterceptor
      * @param Enlight_Event_EventArgs $arguments
      * @return boolean
      */
-    public function intercept(Enlight_Event_EventArgs $arguments)
-    {
+    public function intercept(Enlight_Event_EventArgs $arguments) {
         $this->init($arguments);
 
         $script = null;
@@ -25,14 +29,20 @@ class Shopware_Plugins_Frontend_Boxalino_FrontendInterceptor
             case 'detail':
                 $id = trim(strip_tags(htmlspecialchars_decode(stripslashes($this->Request()->sArticle))));
                 $sArticle = $this->View()->sArticle;
-                if($this->Config()->get('boxalino_product_recommendation_enabled')) {
+                if ($this->Config()->get('boxalino_product_recommendation_enabled')) {
                     // Replace similar & related products, if choice IDs given
                     $choiceIds = array();
                     foreach ($this->_productRecommendations as $configOption) {
                         $choiceId = $this->Config()->get($configOption);
-                        if (strlen($choiceId)) {
+                        if ($this->Helper()->isValidChoiceId($choiceId)) {
                             $choiceIds[$configOption] = $choiceId;
                         }
+                    }
+                    foreach ($this->_productRecommendationsGeneric as $configOption) {
+                      $choiceId = $this->Config()->get($configOption);
+                      if ($this->Helper()->isValidChoiceId($choiceId)) {
+                          $choiceIds[$configOption] = $choiceId;
+                      }
                     }
                     $articles = $this->Helper()->findRecommendations(
                         $id, 'mainProduct', $choiceIds
@@ -43,6 +53,11 @@ class Shopware_Plugins_Frontend_Boxalino_FrontendInterceptor
                         }
                     }
                     $this->View()->assign('sArticle', $sArticle);
+                                        foreach ($this->_productRecommendationsGeneric as $articleKey => $configOption) {
+                        if (array_key_exists($configOption, $choiceIds)) {
+                                                    $this->View()->assign($articleKey, $articles[$configOption]);
+                        }
+                    }
                 }
                 $script = Shopware_Plugins_Frontend_Boxalino_EventReporter::reportProductView($sArticle['articleDetailsID']);
                 break;
@@ -73,28 +88,28 @@ class Shopware_Plugins_Frontend_Boxalino_FrontendInterceptor
      * @param Enlight_Event_EventArgs $arguments
      * @return boolean
      */
-    public function basket(Enlight_Event_EventArgs $arguments)
-    {
-        if (!$this->Config()->get('boxalino_basket_recommendation_enabled')) {
-            return null;
-        }
+    public function basket(Enlight_Event_EventArgs $arguments) {
+        if (!$this->Config()->get('boxalino_basket_recommendation_enabled')) return null;
+        
         $this->init($arguments);
-
-        $articles = array();
         $choiceId = $this->Config()->get('boxalino_basket_widget_name');
-        if (strlen($choiceId)) {
-            // @todo extract from sBasket instead
-            $id = trim(strip_tags(htmlspecialchars_decode(stripslashes($this->Request()->sArticle))));
-            $articles = $this->Helper()->findRecommendations(
-                $id, 'mainProduct', $choiceId
-            );
-        }
-
-        $this->View()->loadTemplate('frontend/checkout/ajax_cart.tpl');
+        if (!$this->Helper()->isValidChoiceId($choiceId)) return null;
+        
+        $basket = $this->Helper()->getBasket($arguments);
+        $recommendations = array();
+        $contextItems = $basket['content'];
+        if (empty($contextItems)) return null;
+        
+        usort($contextItems, function($a, $b) {
+            return $b['price'] - $a['price'];
+        });
+        $contextItems = array_map(function($contextItem) {
+            return $contextItem['articleID'];
+        }, $contextItems);
+        $recommendations = $this->Helper()->findRecommendations($contextItems, 'mainProduct', $choiceId, 3);
         $this->View()->addTemplateDir($this->Bootstrap()->Path() . 'Views/');
-        $this->View()->extendsTemplate('frontend/ajax_cart.tpl');
-        $this->View()->assign('sRecommendations', $articles);
-        return false;
+        $this->View()->assign('sRecommendations', $recommendations);
+        return null;
     }
 
     /**
@@ -102,8 +117,7 @@ class Shopware_Plugins_Frontend_Boxalino_FrontendInterceptor
      * @param Enlight_Event_EventArgs $arguments
      * @return boolean
      */
-    public function addToBasket(Enlight_Event_EventArgs $arguments)
-    {
+    public function addToBasket(Enlight_Event_EventArgs $arguments) {
         if ($this->Config()->get('boxalino_tracking_enabled')) {
             $article = $arguments->getArticle();
             $price = $arguments->getPrice();
@@ -122,8 +136,7 @@ class Shopware_Plugins_Frontend_Boxalino_FrontendInterceptor
      * @param Enlight_Event_EventArgs $arguments
      * @return boolean
      */
-    public function purchase(Enlight_Event_EventArgs $arguments)
-    {
+    public function purchase(Enlight_Event_EventArgs $arguments) {
         if ($this->Config()->get('boxalino_tracking_enabled')) {
             $products = array();
             foreach ($arguments->getDetails() as $detail) {
@@ -148,12 +161,12 @@ class Shopware_Plugins_Frontend_Boxalino_FrontendInterceptor
      * @param string $script
      * @return void
      */
-    protected function addScript($script)
-    {
+    protected function addScript($script) {
         if ($script != null && $this->Config()->get('boxalino_tracking_enabled')) {
             $this->View()->addTemplateDir($this->Bootstrap()->Path() . 'Views/');
             $this->View()->extendsTemplate('frontend/index.tpl');
             $this->View()->assign('report_script', $script);
         }
     }
+    
 }

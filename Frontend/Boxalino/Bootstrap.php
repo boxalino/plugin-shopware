@@ -1,7 +1,6 @@
 <?php
 class Shopware_Plugins_Frontend_Boxalino_Bootstrap
-    extends Shopware_Components_Plugin_Bootstrap
-{
+    extends Shopware_Components_Plugin_Bootstrap {
 
     /**
      * @var Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
@@ -12,8 +11,7 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
      */
     private $frontendInterceptor;
 
-    public function __construct($name, $info = null)
-    {
+    public function __construct($name, $info = null) {
         parent::__construct($name, $info);
 
         if (version_compare(Shopware::VERSION, '5.0.0', '>=')) {
@@ -25,8 +23,7 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
         $this->frontendInterceptor = new Shopware_Plugins_Frontend_Boxalino_FrontendInterceptor($this);
     }
 
-    public function getCapabilities()
-    {
+    public function getCapabilities() {
         return array(
             'install' => true,
             'update' => true,
@@ -34,18 +31,15 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
         );
     }
 
-    public function getLabel()
-    {
+    public function getLabel() {
         return 'boxalino';
     }
 
-    public function getVersion()
-    {
-        return '1.1.6';
+    public function getVersion() {
+        return '1.2.0';
     }
 
-    public function getInfo()
-    {
+    public function getInfo() {
         return array(
             'version' => $this->getVersion(),
             'label' => $this->getLabel(),
@@ -60,13 +54,11 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
     /**
      * @return \Shopware\Components\Model\ModelManager
      */
-    protected function getEntityManager()
-    {
+    protected function getEntityManager() {
         return Shopware()->Models();
     }
 
-    public function install()
-    {
+    public function install() {
         try {
             $this->registerEvents();
             $this->createConfiguration();
@@ -80,28 +72,10 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
         return true;
     }
 
-    public function update($version)
-    {
-        $registerEvents = $createConfiguration = false;
-        switch($version) {
-            case '1.0':
-                $registerEvents = $createConfiguration = true;
-            case '1.1':
-            case '1.1.0':
-            case '1.1.1':
-            case '1.1.2':
-            case '1.1.3':
-            case '1.1.4':
-            case '1.1.5':
-                // nothing to do (yet)
-                break;
-            default:
-                Shopware()->Log()->Err("Plugin update for version $version is not known, please contact the boxalino support.");
-                return false;
-        }
+    public function update($version) {
         try {
-            if ($registerEvents) $this->registerEvents();
-            if ($createConfiguration) $this->createConfiguration();
+            $this->registerEvents();
+            $this->createConfiguration();
         } catch (Exception $e) {
             Shopware()->Log()->Err('Plugin update error: '. $e->getMessage());
             return false;
@@ -109,8 +83,7 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
         return true;
     }
 
-    public function uninstall()
-    {
+    public function uninstall() {
         try {
             $this->removeDatabase();
         } catch (Exception $e) {
@@ -120,8 +93,7 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
         return array('success' => true, 'invalidateCache' => array('frontend'));
     }
 
-    private function registerCronJobs()
-    {
+    private function registerCronJobs() {
         $this->createCronJob(
             'BoxalinoExport',
             'BoxalinoExportCron',
@@ -146,27 +118,46 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
             'onBoxalinoExportCronJobDelta'
         );
     }
+    
+    public function addJsFiles(Enlight_Event_EventArgs $args) {
+        $jsFiles = array(
+            __DIR__ . '/Views/responsive/frontend/_resources/javascript/jquery.bx_register_add_article.js',
+            __DIR__ . '/Views/responsive/frontend/_resources/javascript/jquery.search_enhancements.js'
+        );
+        return new Doctrine\Common\Collections\ArrayCollection($jsFiles);
+    }
+    
+    public function addLessFiles(Enlight_Event_EventArgs $args) {
+        $less = array(
+            new \Shopware\Components\Theme\LessDefinition(
+                array(), 
+                array(__DIR__ . '/Views/responsive/frontend/_resources/less/cart_recommendations.less'), 
+                __DIR__
+            ), new \Shopware\Components\Theme\LessDefinition(
+                array(), 
+                array(__DIR__ . '/Views/responsive/frontend/_resources/less/search.less'), 
+                __DIR__
+            )
+        );
+        return new Doctrine\Common\Collections\ArrayCollection($less);
+    }
 
-    public function onBoxalinoExportCronJob(Shopware_Components_Cron_CronJob $job)
-    {
+    public function onBoxalinoExportCronJob(Shopware_Components_Cron_CronJob $job) {
         return $this->runBoxalinoExportCronJob();
     }
 
-    public function onBoxalinoExportCronJobDelta(Shopware_Components_Cron_CronJob $job)
-    {
+    public function onBoxalinoExportCronJobDelta(Shopware_Components_Cron_CronJob $job) {
         return $this->runBoxalinoExportCronJob(true);
     }
 
-    private function runBoxalinoExportCronJob($delta = false)
-    {
+    private function runBoxalinoExportCronJob($delta = false) {
         $tmpPath = Shopware()->DocPath('media_temp_boxalinoexport');
         $exporter = new Shopware_Plugins_Frontend_Boxalino_DataExporter($tmpPath, $delta);
         $exporter->run();
         return true;
     }
 
-    private function createDatabase()
-    {
+    private function createDatabase() {
         $db = Shopware()->Db();
         $db->query(
             'CREATE TABLE IF NOT EXISTS ' . $db->quoteIdentifier('exports') .
@@ -174,23 +165,20 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
         );
     }
 
-    private function removeDatabase()
-    {
+    private function removeDatabase() {
         $db = Shopware()->Db();
         $db->query(
             'DROP TABLE IF EXISTS ' . $db->quoteIdentifier('exports')
         );
     }
 
-    private function registerEvents()
-    {
+    private function registerEvents() {
         // search results and autocompletion results
         $this->subscribeEvent('Enlight_Controller_Action_Frontend_Search_DefaultSearch', 'onSearch');
         $this->subscribeEvent('Enlight_Controller_Action_Frontend_AjaxSearch_Index', 'onAjaxSearch');
 
         // all frontend views to inject appropriate tracking, product and basket recommendations
         $this->subscribeEvent('Enlight_Controller_Action_PostDispatch_Frontend', 'onFrontend');
-        $this->subscribeEvent('Enlight_Controller_Action_Frontend_Checkout_Cart', 'onBasket');
 
         // add to basket and purchase tracking
         $this->subscribeEvent('Shopware_Modules_Basket_AddArticle_FilterSql', 'onAddToBasket');
@@ -199,49 +187,44 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
         // backend indexing menu and running indexer
         $this->subscribeEvent('Enlight_Controller_Dispatcher_ControllerPath_Backend_BoxalinoExport', 'boxalinoBackendControllerExport');
         $this->subscribeEvent('Enlight_Controller_Action_PostDispatch_Backend_Customer', 'onBackendCustomerPostDispatch');
+        
+        $this->subscribeEvent('Theme_Compiler_Collect_Plugin_Javascript', 'addJsFiles');
+        $this->subscribeEvent('Theme_Compiler_Collect_Plugin_Less', 'addLessFiles');
     }
 
-    public function boxalinoBackendControllerExport()
-    {
+    public function boxalinoBackendControllerExport() {
         Shopware()->Template()->addTemplateDir(Shopware()->Plugins()->Frontend()->Boxalino()->Path() . 'Views/');
-
         return Shopware()->Plugins()->Frontend()->Boxalino()->Path() . "/Controllers/backend/BoxalinoExport.php";
     }
 
-    public function onSearch(Enlight_Event_EventArgs $arguments)
-    {
+    public function onSearch(Enlight_Event_EventArgs $arguments) {
         return $this->searchInterceptor->search($arguments);
     }
 
-    public function onAjaxSearch(Enlight_Event_EventArgs $arguments)
-    {
+    public function onAjaxSearch(Enlight_Event_EventArgs $arguments) {
         return $this->searchInterceptor->ajaxSearch($arguments);
     }
 
-    public function onFrontend(Enlight_Event_EventArgs $arguments)
-    {
+    public function onFrontend(Enlight_Event_EventArgs $arguments) {
+        $this->onBasket($arguments);
         return $this->frontendInterceptor->intercept($arguments);
     }
 
-    public function onBasket(Enlight_Event_EventArgs $arguments)
-    {
+    public function onBasket(Enlight_Event_EventArgs $arguments) {
         if (version_compare(Shopware::VERSION, '5.0.0', '>=')) {
             return $this->frontendInterceptor->basket($arguments);
         }
     }
 
-    public function onAddToBasket(Enlight_Event_EventArgs $arguments)
-    {
+    public function onAddToBasket(Enlight_Event_EventArgs $arguments) {
         return $this->frontendInterceptor->addToBasket($arguments);
     }
 
-    public function onPurchase(Enlight_Event_EventArgs $arguments)
-    {
+    public function onPurchase(Enlight_Event_EventArgs $arguments) {
         return $this->frontendInterceptor->purchase($arguments);
     }
 
-    public function createConfiguration()
-    {
+    public function createConfiguration() {
         $scopeShop = Shopware\Models\Config\Element::SCOPE_SHOP;
         $scopeLocale = Shopware\Models\Config\Element::SCOPE_LOCALE;
         $storeNoYes = array(
@@ -294,6 +277,14 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
             'label' => 'Related Recommendation Choice ID',
             'value' => 'recommendation_related',
         ), array(
+            'name' => 'recommendation_bought_widget_name',
+            'label' => 'Bought Recommendation Choice ID',
+            'value' => '',
+        ), array(
+            'name' => 'recommendation_viewed_widget_name',
+            'label' => 'Viewed Recommendation Choice ID',
+            'value' => '',
+        ), array(
             'name' => 'basket_widget_name',
             'label' => 'Basket Recommendation Choice ID',
             'value' => 'basket',
@@ -330,13 +321,13 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
         ), array(
             'type' => 'number',
             'name' => 'search_suggestions_minimum',
-            'label' => 'Display Suggestions when less results then this (default: 3)',
+            'label' => 'Display Suggestions when less results than this (default: 3)',
             'minValue' => 0,
             'value' => 3,
         ), array(
             'type' => 'number',
             'name' => 'search_suggestions_maximum',
-            'label' => 'Display Suggestions when more results then this (default: 1000)',
+            'label' => 'Display Suggestions when more results than this (default: 1000)',
             'minValue' => 0,
             'value' => 1000,
         ), array(
@@ -348,9 +339,15 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
         ), array(
             'type' => 'number',
             'name' => 'search_relaxation_minimum',
-            'label' => 'Display subphrases when less results then this (default: 3)',
+            'label' => 'Display subphrases when less results than this (default: 3)',
             'minValue' => 0,
             'value' => 3,
+        ), array(
+            'type' => 'select',
+            'name' => 'blogsearch_enabled',
+            'label' => 'Blog Search Enabled (default: No)',
+            'store' => $storeNoYes,
+            'value' => 0,
         ), array(
             'type' => 'select',
             'name' => 'export',
@@ -379,7 +376,6 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
             ),
             'value' => 1
         ));
-
         $form = $this->Form();
         foreach($fields as $f) {
             $type = 'text';
@@ -395,6 +391,10 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
             if (!array_key_exists('scope', $f)) {
                 $f['scope'] = $scopeShop;
             }
+            $present = $form->getElement($name);
+            if ($present && array_key_exists('value', $present)) {
+                $f['value'] = $present['value'];
+            }
             $form->setElement($type, $name, $f);
         }
     }
@@ -404,8 +404,7 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
      *
      * @param Enlight_Event_EventArgs $args
      */
-    public function onBackendCustomerPostDispatch(Enlight_Event_EventArgs $args)
-    {
+    public function onBackendCustomerPostDispatch(Enlight_Event_EventArgs $args) {
 
         /**@var $view Enlight_View_Default*/
         $view = $args->getSubject()->View();
@@ -429,8 +428,7 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
         }
     }
 
-    private function applyBackendViewModifications()
-    {
+    private function applyBackendViewModifications() {
         try {
             $parent = $this->Menu()->findOneBy('label', 'import/export');
             $this->createMenuItem(array('label' => 'Boxalino Export', 'class' => 'sprite-cards-stack', 'active' => 1,
@@ -440,4 +438,5 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
             throw new Exception('can\'t create menu entry: ' . $e->getMessage());
         }
     }
+    
 }

@@ -66,6 +66,7 @@ class Shopware_Plugins_Frontend_Boxalino_Event
                 CURLOPT_HEADER => FALSE, // don't return the headers in the output
             )
         );
+        curl_setopt($s, CURLOPT_RETURNTRANSFER, true);
         $result = curl_exec($s);
         curl_close($s);
         return $result;
