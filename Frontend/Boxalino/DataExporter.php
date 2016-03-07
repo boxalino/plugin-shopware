@@ -1918,7 +1918,11 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
                     foreach ($this->getShopLocales($id) as $lang) {
                         $field = $logic->addChild('field');
                         $field->addAttribute('language', $lang);
-                        $field->addAttribute('column', $fieldDesc['column'] . '_' . $lang);
+						$languageColumn = $fieldDesc['column'] . '_' . $lang;
+						if(sizeof($this->getShopLocales($id)) == 1 && ($fieldDesc['type'] == 'title' || $fieldDesc['type'] == 'body' || strpos($fieldDesc['name'], 'additionaltext') !== false)) {
+							$languageColumn = $fieldDesc['column'];
+						}
+						$field->addAttribute('column', $languageColumn);
                     }
                 } else {
                     $field = $logic->addChild('field');
