@@ -1356,7 +1356,7 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
 
             $forFieldParameter = $property->addChild('params');
         }
-
+        
         // prepare queries
         $sql = $db->select()
                   ->from(array('b' => 's_blog'), 
@@ -1371,9 +1371,15 @@ class Shopware_Plugins_Frontend_Boxalino_DataExporter
                          )
                   ->joinLeft(array('bas' => 's_blog_assigned_articles'), 'bas.blog_id = b.id')
                   ->joinLeft(array('bt' => 's_blog_tags'), 'bt.blog_id = b.id')
+                  ->join(
+                    array('c' => 's_categories'),
+                    $this->qi('c.id') . ' = ' . $this->qi('b.category_id') .
+                    $this->getShopCategoryIds($id),
+                    array()
+                  )
                   ->group('b.id');
         $stmt = $db->query($sql);
-
+   
         // prepare file & stream results into it
         $file_name = $this->dirPath . self::ITEM_BLOGS_CSV;
         $this->openFile($file_name);
