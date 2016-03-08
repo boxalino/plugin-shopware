@@ -79,11 +79,15 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
             $this->View()->addTemplateDir($this->Bootstrap()->Path() . 'Views/');
             $this->View()->loadTemplate('frontend/ajax4.tpl');
         }
+		$totalHitCount = count($sResults);
+		if(isset($response->prefixSearchResult) && isset($response->prefixSearchResult->totalHitCount)) {
+			$totalHitCount = $response->prefixSearchResult->totalHitCount;
+		}
         $templateProperties = array_merge(array(
             'sSearchRequest' => array('sSearch' => $term),
             'sSearchResults' => array(
                 'sResults' => $sResults,
-                'sArticlesCount' => count($sResults),
+                'sArticlesCount' => $totalHitCount, //count($sResults),
                 'sSuggestions' => $suggestions,
             ),
             'bxHasOtherItemTypes' => !empty($responses)
