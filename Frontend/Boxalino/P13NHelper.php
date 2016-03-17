@@ -51,10 +51,16 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper {
         $choiceRequest = $p13n->getChoiceRequest($p13nAccount, $cookieDomain);
         
         $choiceRequest->inquiries = $inquiries;
-        
-        // Call the service
+		
+		// Call the service
         try {
             $choiceResponse = $p13n->choose($choiceRequest);
+			if ($this->isDebug()) {
+				$this->debug($choiceRequest);
+				$this->debug($choiceResponse);
+				exit;
+			}
+        
         } catch (Exception $e) {
             $this->debug("choose failed", $e->getMessage());
             if ($this->isDebug()) {
@@ -382,6 +388,11 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper {
         // Call the service
         try {
             $choiceResponse = $p13n->choose($choiceRequest);
+			if ($this->isDebug()) {
+				$this->debug($choiceRequest);
+				$this->debug($choiceResponse);
+				exit;
+			}
         } catch (Exception $e) {
             $this->debug("choose failed", $e->getMessage());
             if ($this->isDebug()) {
