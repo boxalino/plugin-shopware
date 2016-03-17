@@ -55,22 +55,34 @@ class HttpP13n {
         $userRecord->username = $accountname;
         $choiceRequest->userRecord = $userRecord;
 
-        // Setup request context
         $sessionid = $this->getSessionId();
         $profileid = $this->getVisitorId();
-
         $choiceRequest->profileId = $profileid;
+        $this->refreshCookies($sessionid, $profileid, $cookieDomain);
 
-        // Refresh cookies
-        if(empty($cookieDomain)) {
+        return $choiceRequest;
+    }
+        
+    public function getAutocompleteRequest($accountname, $cookieDomain = null) {
+        $request = new \com\boxalino\p13n\api\thrift\AutocompleteRequest();
+        $userRecord = new \com\boxalino\p13n\api\thrift\UserRecord();
+        $userRecord->username = $accountname;
+        $request->userRecord = $userRecord;
+        $sessionid = $this->getSessionId();
+        $profileid = $this->getVisitorId();
+        $request->profileId = $profileid;
+        $this->refreshCookies($sessionid, $profileid, $cookieDomain);
+        return $request;
+    }
+        
+    private function refreshCookies($sessionid, $profileid, $cookieDomain) {
+        if (empty($cookieDomain)) {
             setcookie('cems', $sessionid, 0, '/');
             setcookie('cemv', $profileid, time() + 1800, '/');
         } else {
             setcookie('cems', $sessionid, 0, '/', $cookieDomain);
             setcookie('cemv', $profileid, time() + 1800, '/', $cookieDomain);
         }
-
-        return $choiceRequest;
     }
 
     /**

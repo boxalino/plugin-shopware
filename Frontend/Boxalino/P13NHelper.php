@@ -51,16 +51,14 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper {
         $choiceRequest = $p13n->getChoiceRequest($p13nAccount, $cookieDomain);
         
         $choiceRequest->inquiries = $inquiries;
-		
-		// Call the service
+
+        // Call the service
         try {
             $choiceResponse = $p13n->choose($choiceRequest);
-			if ($this->isDebug()) {
-				$this->debug($choiceRequest);
-				$this->debug($choiceResponse);
-				exit;
-			}
-        
+            if ($this->isDebugProtected()) {
+                $this->debug($choiceRequest);
+                $this->debug($choiceResponse);
+            }
         } catch (Exception $e) {
             $this->debug("choose failed", $e->getMessage());
             if ($this->isDebug()) {
@@ -197,7 +195,6 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper {
         }
         return $searchQuery;
     }
-
     
     public function withTypeFilter($type, $options = array()) {
         $filter = array(
@@ -243,6 +240,7 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper {
             $responseBundle = $p13n->autocompleteAll($requestBundle);
         } catch (Exception $e) {
             $this->debug("autocompleteAll failed", $e->getMessage());
+            $this->debugProtected($requestBundle, $responseBundle);
             if ($this->isDebug()) {
                 exit;
             }
@@ -250,6 +248,7 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper {
             return;
         }
         $timing();
+        $this->debugProtected($requestBundle, $responseBundle);
         return $responseBundle->responses;
     }
     
@@ -264,13 +263,11 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper {
             );
         }
         
-        // ensure init thrift classloader
-        new HttpP13n();
+        $cookieDomain = $this->config->get('boxalino_domain');
+        $p13n = new HttpP13n();
         $account = $this->getAccount();
-        $userRecord = new \com\boxalino\p13n\api\thrift\UserRecord();
-        $userRecord->username = $account;
-        $request = new \com\boxalino\p13n\api\thrift\AutocompleteRequest();
-        
+        $request = $p13n->getAutocompleteRequest($account, $cookieDomain);
+                
         $searchQuery = $this->newSearchQuery($text, $offset, $hitCount, $options, $type);
         
         $autocompleteQuery = new \com\boxalino\p13n\api\thrift\AutocompleteQuery();
@@ -282,13 +279,7 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper {
         $autocompleteQuery->highlightPre = '<em>';
         $autocompleteQuery->highlightPost = '</em>';
         
-        $cemv = Shopware()->Front()->Request()->getCookie('cemv');
-        if (empty($cemv)) {
-            $cemv = self::getSessionId();
-        }
-        $request->userRecord = $userRecord;
         $request->choiceId = $this->config->get('boxalino_autocomplete_widget_name');
-        $request->profileId = $cemv;
         $request->autocompleteQuery = $autocompleteQuery;
         $request->searchChoiceId = $this->config->get('boxalino_search_widget_name');
         $request->searchQuery = $searchQuery;
@@ -388,11 +379,10 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper {
         // Call the service
         try {
             $choiceResponse = $p13n->choose($choiceRequest);
-			if ($this->isDebug()) {
-				$this->debug($choiceRequest);
-				$this->debug($choiceResponse);
-				exit;
-			}
+            if ($this->isDebugProtected()) {
+                $this->debug($choiceRequest);
+                $this->debug($choiceResponse);
+            }
         } catch (Exception $e) {
             $this->debug("choose failed", $e->getMessage());
             if ($this->isDebug()) {
@@ -567,7 +557,7 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper {
             $suggestions[] = array(
                 'text' => $hit->suggestion,
                 'html' => (strlen($hit->highlighted) ? $hit->highlighted : $hit->suggestion),
-                'hits' => $hit->searchResult->totalHitCount,
+                'hits' => $hit->searchResult->totalHitCount
             );
             $seen[$hit->suggestion] = true;
         }
@@ -649,15 +639,29 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper {
         }
     }
 
+    public function debugProtected($a, $b = null) {
+        if (!$this->isDebugProtected()) return;
+
+        $this->debug($a, $b);
+    }
+
     private function isDebug() {
+        if (!$this->Request()) return false;
+
         return $this->Request()->getQuery('dev_bx_disp', false) == 'true';
+    }
+
+    private function isDebugProtected() {
+        if (!$this->Request()) return false;
+
+        return $this->Request()->getQuery('bx_debug_auth', false) == $this->config->get('boxalino_password');
     }
 
     public static function getAccount() {
         $config = Shopware()->Config();
         if ($config->get('boxalino_dev', 0) == 1) {
             return $config->get('boxalino_account') . '_dev';
-        } else{
+        } else {
             return $config->get('boxalino_account');
         }
     }

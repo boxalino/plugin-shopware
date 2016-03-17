@@ -303,9 +303,9 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
         ), array(
             'type' => 'select',
             'name' => 'basket_recommendation_enabled',
-            'label' => 'Basket Recommendations Enabled (default: Yes)',
+            'label' => 'Basket Recommendations Enabled (default: No)',
             'store' => $storeNoYes,
-            'value' => 1,
+            'value' => 0,
         ), array(
             'type' => 'select',
             'name' => 'search_enabled',
