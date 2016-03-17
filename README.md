@@ -45,7 +45,7 @@ If you need more information on any of these topics, please don't hesitate to co
 
 ## Documentation
 
-The latest documentation PDF can be found on the [Shopware plugin's support page](https://boxalino.zendesk.com/hc/en-gb/articles/211077797-Getting-started-with-the-boxalino-plugin-for-Shopware).
+http://documentation.boxalino.com/boxalino-shopware-plugin/
 
 ## Adding Recommendations
 
