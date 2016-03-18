@@ -318,29 +318,14 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper {
             $choiceRequest->requestContext = $requestContext;
         }
         
-        $contextItems = array();
-        if (is_array($id)) {
-            $contextItems = &$id;
-            $id = array_shift($id);
-        }
-        
-        // Setup a context item
-        if (!empty($id)) {
-            $contextItems = array(
-                new \com\boxalino\p13n\api\thrift\ContextItem(array(
-                    'indexId' => $p13nAccount,
-                    'fieldName' => $fieldName,
-                    'contextItemId' => $id,
-                    'role' => $role
-                ))
-            );
-        }
-        foreach ($contextItems as $contextItem) {
+        $contextItemIds = is_array($id) ? $id : array($id);
+        $contextItems = [];
+        foreach ($contextItemIds as $i => $itemId) {
             $contextItems[] = new \com\boxalino\p13n\api\thrift\ContextItem(array(
                 'indexId' => $p13nAccount,
                 'fieldName' => $fieldName,
-                'contextItemId' => $id,
-                'role' => 'subProduct'
+                'contextItemId' => $itemId,
+                'role' => $i == 0 ? $role : 'subProduct'
             ));
         }
 
