@@ -32,20 +32,20 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
     }
 
     public function getLabel() {
-        return 'boxalino';
+        return 'Boxalino';
     }
 
     public function getVersion() {
-        return '1.2.0';
+        return '1.2.2';
     }
 
     public function getInfo() {
         return array(
             'version' => $this->getVersion(),
             'label' => $this->getLabel(),
-            'author' => 'boxalino AG',
-            'copyright' => 'Copyright © 2014, boxalino AG',
-            'description' => 'Integrates boxalino search & recommendation into Shopware.',
+            'author' => 'Boxalino AG',
+            'copyright' => 'Copyright © 2014, Boxalino AG',
+            'description' => 'Integrates Boxalino search & recommendation into Shopware.',
             'support' => 'support@boxalino.com',
             'link' => 'http://www.boxalino.com/',
         );
@@ -65,6 +65,7 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
             $this->applyBackendViewModifications();
             $this->createDatabase();
             $this->registerCronJobs();
+            $this->registerEmotions();
         } catch (Exception $e) {
             Shopware()->Log()->Err('Plugin install error: '. $e->getMessage());
             return false;
@@ -76,6 +77,7 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
         try {
             $this->registerEvents();
             $this->createConfiguration();
+            $this->registerEmotions();
         } catch (Exception $e) {
             Shopware()->Log()->Err('Plugin update error: '. $e->getMessage());
             return false;
@@ -190,6 +192,82 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
         
         $this->subscribeEvent('Theme_Compiler_Collect_Plugin_Javascript', 'addJsFiles');
         $this->subscribeEvent('Theme_Compiler_Collect_Plugin_Less', 'addLessFiles');
+    }
+    
+    private function registerEmotions() {
+        $component = $this->createEmotionComponent(array(
+            'name' => 'Boxalino Slider Recommendations',
+            'template' => 'boxalino_slider_recommendations',
+            'description' => 'Display Boxalino product recommendations as slider.',
+            'convertFunction' => null
+        ));
+        if ($component->getFields()->count() == 0) {
+            $component->createTextField(array(
+                'name' => 'choiceId',
+                'fieldLabel' => 'Choice id',
+                'allowBlank' => false
+            ));
+            $component->createNumberField(array(
+                'name' => 'article_slider_max_number',
+                'fieldLabel' => 'Maximum number of articles',
+                'allowBlank' => false,
+                'defaultValue' => 10
+            ));
+            $component->createTextField(array(
+                'name' => 'article_slider_title',
+                'fieldLabel' => 'Title',
+                'supportText' => 'Title to be displayed above the slider'
+            ));
+            $component->createCheckboxField(array(
+                'name' => 'article_slider_arrows',
+                'fieldLabel' => 'Display arrows',
+                'defaultValue' => 1
+            ));
+            $component->createCheckboxField(array(
+                'name' => 'article_slider_numbers',
+                'fieldLabel' => 'Display numbers',
+                'defaultValue' => 0
+            ));
+            $component->createNumberField(array(
+                'name' => 'article_slider_scrollspeed',
+                'fieldLabel' => 'Scroll speed',
+                'allowBlank' => false,
+                'defaultValue' => 500
+            ));
+            $component->createHiddenField(array(
+                'name' => 'article_slider_rotatespeed',
+                'fieldLabel' => 'Rotation speed',
+                'allowBlank' => false,
+                'defaultValue' => 5000
+            ));
+        }
+        $this->subscribeEvent(
+            'Enlight_Controller_Action_PostDispatchSecure_Widgets_Campaign',
+            'extendsEmotionTemplates'
+        );
+        $this->subscribeEvent(
+            'Shopware_Controllers_Widgets_Emotion_AddElement',
+            'convertRecommendationSlider'
+        );
+        $this->registerController('Frontend', 'RecommendationSlider');
+    }
+    
+    public function convertRecommendationSlider($args) {
+        $data = $args->getReturn();
+        if ($args['element']['component']['name'] != "Boxalino Slider Recommendations") {
+            return $data;
+        }
+        $query = array(
+            'controller' => 'RecommendationSlider',
+            'module' => 'frontend',
+            'action' => 'productStreamSliderRecommendations',
+            'bxChoiceId' => $data['choiceId'],
+            'bxCount' => $data['article_slider_max_number']
+        );
+        $data["ajaxFeed"] = Shopware()->Router()->assemble($query);
+        Shopware()->PluginLogger()->debug("component match:: " . var_export($args['element']['component'], true));
+        Shopware()->PluginLogger()->debug("result data:: " . var_export($data, true));
+        return $data;
     }
 
     public function boxalinoBackendControllerExport() {
@@ -346,6 +424,12 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
             'type' => 'select',
             'name' => 'blogsearch_enabled',
             'label' => 'Blog Search Enabled (default: No)',
+            'store' => $storeNoYes,
+            'value' => 0,
+        ), array(
+            'type' => 'select',
+            'name' => 'categoryautocomplete_enabled',
+            'label' => 'Category autocompletion enabled (default: No)',
             'store' => $storeNoYes,
             'value' => 0,
         ), array(

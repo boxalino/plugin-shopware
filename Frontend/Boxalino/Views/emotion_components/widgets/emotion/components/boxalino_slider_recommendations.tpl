@@ -1,0 +1,1 @@
+{extends file="parent:widgets/emotion/components/component_article_slider.tpl"}

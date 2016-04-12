@@ -79,13 +79,13 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
             $this->View()->addTemplateDir($this->Bootstrap()->Path() . 'Views/');
             $this->View()->loadTemplate('frontend/ajax4.tpl');
         }
-		$totalHitCount = count($sResults);
-		if (isset($response->prefixSearchResult) && isset($response->prefixSearchResult->totalHitCount)) {
-			$totalHitCount = $response->prefixSearchResult->totalHitCount;
-		}
-		if ($totalHitCount == 0) {
-		    $totalHitCount = $suggestions[0]['hits'];
-		}
+        $totalHitCount = count($sResults);
+        if (isset($response->prefixSearchResult) && isset($response->prefixSearchResult->totalHitCount)) {
+          $totalHitCount = $response->prefixSearchResult->totalHitCount;
+        }
+        if ($totalHitCount == 0) {
+          $totalHitCount = $suggestions[0]['hits'];
+        }
         $templateProperties = array_merge(array(
             'sSearchRequest' => array('sSearch' => $term),
             'sSearchResults' => array(
@@ -95,6 +95,27 @@ class Shopware_Plugins_Frontend_Boxalino_SearchInterceptor
             ),
             'bxHasOtherItemTypes' => !empty($responses)
         ), $this->extractAutocompleteTemplateProperties($responses, $hitCount));
+        if ($this->Config()->get('boxalino_categoryautocomplete_enabled')) {
+            foreach ($response->propertyResults as $propertyResult) {
+              if ($propertyResult->name == 'categories') {
+                $propertyHits = array_map(function($hit) {
+                  $categoryId = preg_replace('/\/.*/', '', $hit->label);
+                  $categoryPath = Shopware()->Modules()->Categories()->sGetCategoryPath($categoryId);
+                  return array(
+                    'value' => $hit->value,
+                    'label' => $hit->label,
+                    'total' => $hit->totalHitCount,
+                    'link' => $categoryPath
+                  );
+                }, $propertyResult->hits);
+                $templateProperties = array_merge(array(
+                  'bxCategorySuggestions' => $propertyHits,
+                  'bxCategorySuggestionTotal' => count($propertyHits)
+                ), $templateProperties);
+                break;
+              }
+            }
+        }
         $this->View()->assign($templateProperties);
         return false;
     }

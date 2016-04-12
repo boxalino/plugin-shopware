@@ -267,7 +267,7 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper {
         $p13n = new HttpP13n();
         $account = $this->getAccount();
         $request = $p13n->getAutocompleteRequest($account, $cookieDomain);
-                
+        
         $searchQuery = $this->newSearchQuery($text, $offset, $hitCount, $options, $type);
         
         $autocompleteQuery = new \com\boxalino\p13n\api\thrift\AutocompleteQuery();
@@ -283,6 +283,13 @@ class Shopware_Plugins_Frontend_Boxalino_P13NHelper {
         $request->autocompleteQuery = $autocompleteQuery;
         $request->searchChoiceId = $this->config->get('boxalino_search_widget_name');
         $request->searchQuery = $searchQuery;
+        if ($this->config->get('boxalino_categoryautocomplete_enabled') && $type == 'product') {
+            $propertyQuery = new \com\boxalino\p13n\api\thrift\PropertyQuery();
+            $propertyQuery->name = "categories";
+            $propertyQuery->hitCount = 5;
+            $propertyQuery->evaluateTotal = true;
+            $request->propertyQueries = array($propertyQuery);
+        }
         return $request;
     }
 

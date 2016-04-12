@@ -32,4 +32,18 @@
             </li>
         </ul>
     {/if}
+    {if $bxCategorySuggestionTotal > 0}
+        <ul class="results--list suggestions--category">
+            <li class="entry-heading list--entry block-group result--item">
+                <strong class="search-result--heading">{s name='bx_category_results_heading'}Kategorien{/s}</strong>
+            </li>
+            {foreach $bxCategorySuggestions as $category}
+                <li class="list--entry block-group result--item">
+                    <a class="search-result--link" href="{$category.link}" title="{$category.value}">
+                        {$blog.value} {if $category.total > -1}($category.total){/if}
+                    </a>
+                </li>
+            {/foreach}
+        </ul>
+    {/if}
 {/block}
