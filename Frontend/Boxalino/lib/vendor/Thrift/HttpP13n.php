@@ -21,6 +21,9 @@ class HttpP13n {
     protected $username;
     protected $password;
 
+    protected $profileid = null;
+    protected $sessionid = null;
+
     /**
      *
      */
@@ -49,17 +52,13 @@ class HttpP13n {
      */
     public function getChoiceRequest($accountname, $cookieDomain = null) {
         $choiceRequest = new \com\boxalino\p13n\api\thrift\ChoiceRequest();
-
-        // Setup information about account
         $userRecord = new \com\boxalino\p13n\api\thrift\UserRecord();
         $userRecord->username = $accountname;
         $choiceRequest->userRecord = $userRecord;
-
         $sessionid = $this->getSessionId();
         $profileid = $this->getVisitorId();
         $choiceRequest->profileId = $profileid;
         $this->refreshCookies($sessionid, $profileid, $cookieDomain);
-
         return $choiceRequest;
     }
         
@@ -76,12 +75,13 @@ class HttpP13n {
     }
         
     private function refreshCookies($sessionid, $profileid, $cookieDomain) {
+        $expire = time() + 3600 * 24 * 365;
         if (empty($cookieDomain)) {
             setcookie('cems', $sessionid, 0, '/');
-            setcookie('cemv', $profileid, time() + 1800, '/');
+            setcookie('cemv', $profileid, $expire, '/');
         } else {
             setcookie('cems', $sessionid, 0, '/', $cookieDomain);
-            setcookie('cemv', $profileid, time() + 1800, '/', $cookieDomain);
+            setcookie('cemv', $profileid, $expire, '/', $cookieDomain);
         }
     }
 
@@ -186,6 +186,8 @@ class HttpP13n {
      * @return string
      */
     protected function getSessionId() {
+        if ($this->sessionid != null) return $this->sessionid;
+
         $sessionid = null;
         if (empty($_COOKIE['cems'])) {
             $sessionid = session_id();
@@ -196,7 +198,7 @@ class HttpP13n {
         } else {
             $sessionid = $_COOKIE['cems'];
         }
-
+        $this->sessionid = $sessionid;
         return $sessionid;
     }
 
@@ -204,6 +206,8 @@ class HttpP13n {
      * @return string
      */
     protected function getVisitorId() {
+        if ($this->profileid != null) return $this->profileid;
+
         $profileid = null;
         if (empty($_COOKIE['cemv'])) {
             $profileid = '';
@@ -216,7 +220,7 @@ class HttpP13n {
         } else {
             $profileid = $_COOKIE['cemv'];
         }
-
+        $this->profileid = $profileid;
         return $profileid;
     }
 
