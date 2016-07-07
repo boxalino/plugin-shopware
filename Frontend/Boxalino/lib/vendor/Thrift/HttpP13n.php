@@ -153,14 +153,17 @@ class HttpP13n {
      */
     protected function getRequestContext() {
         $requestContext = new \com\boxalino\p13n\api\thrift\RequestContext();
-        $requestContext->parameters = array(
+        $params = array();
+        foreach($_REQUEST as $k => $v) {
+          $params[$k] = array($v);
+        }
+        $requestContext->parameters = array_merge($params, array(
             'User-Agent'     => array(@$_SERVER['HTTP_USER_AGENT']),
             'User-Host'      => array($this->getIP()),
             'User-SessionId' => array($this->getSessionId()),
             'User-Referer'   => array(@$_SERVER['HTTP_REFERER']),
             'User-URL'       => array($this->getCurrentURL())
-        );
-
+        ));
         return $requestContext;
     }
 
