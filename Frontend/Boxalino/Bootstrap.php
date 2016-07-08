@@ -257,13 +257,17 @@ class Shopware_Plugins_Frontend_Boxalino_Bootstrap
         if ($args['element']['component']['name'] != "Boxalino Slider Recommendations") {
             return $data;
         }
+        $emotionRepository = Shopware()->Models()->getRepository('Shopware\Models\Emotion\Emotion');
+        $categoryId = $args->getSubject()->getEmotion($emotionRepository)[0]['categories'][0]['id'];
         $query = array(
             'controller' => 'RecommendationSlider',
             'module' => 'frontend',
             'action' => 'productStreamSliderRecommendations',
             'bxChoiceId' => $data['choiceId'],
-            'bxCount' => $data['article_slider_max_number']
+            'bxCount' => $data['article_slider_max_number'],
+            'category_id' => $categoryId
         );
+
         $data["ajaxFeed"] = Shopware()->Router()->assemble($query);
         Shopware()->PluginLogger()->debug("component match:: " . var_export($args['element']['component'], true));
         Shopware()->PluginLogger()->debug("result data:: " . var_export($data, true));
