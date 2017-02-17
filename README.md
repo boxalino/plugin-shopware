@@ -2,6 +2,8 @@
 
 ## Introduction
 
+## IMPORTANT: This project is obsolete and has been replaced by https://github.com/boxalino/plugin-shopware-v2
+
 Welcome to the Boxalino Shopware v4 & v5 plugin (the plugin works in both version 4 and version 5 environments of shopware)
 
 The Boxalino plugin for Shopware enables you to easily and quickly benefit from all the functionalities of Boxalino Intelligence:
